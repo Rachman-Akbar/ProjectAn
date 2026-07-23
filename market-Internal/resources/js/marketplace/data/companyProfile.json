@@ -1,0 +1,36 @@
+{
+  "name": "Kisha Accounting & Management Support",
+  "shortName": "Kisha AMS",
+  "tagline": "Integrated Business Support",
+  "description": "Perusahaan pendukung operasional yang membantu unit kerja memperoleh produk, layanan, dan kebutuhan bisnis melalui proses yang terukur, transparan, dan mudah dilacak.",
+  "heroTitle": "Solusi operasional perusahaan dalam satu ekosistem.",
+  "heroSubtitle": "Marketplace internal yang menghubungkan kebutuhan unit kerja dengan produk dan layanan terkurasi, tanpa proses pembelian yang berbelit.",
+  "portfolioIntro": "Kami memadukan pengadaan internal, dukungan administrasi, dan layanan manajemen dalam pengalaman digital yang sederhana. Setiap pesanan dapat dipilih, dicatat, dan dilacak oleh unit kerja tanpa akun buyer.",
+  "address": "Kantor Pusat Perusahaan",
+  "phone": "021-00000000",
+  "email": "procurement@company.local",
+  "hours": "Senin–Jumat, 08.00–17.00",
+  "metrics": [
+    { "value": "100%", "label": "Guest checkout" },
+    { "value": "1 Pintu", "label": "Kebutuhan internal" },
+    { "value": "Real-time", "label": "Status pesanan" },
+    { "value": "Terkurasi", "label": "Produk & layanan" }
+  ],
+  "values": [
+    { "title": "Sederhana", "description": "Alur pemesanan singkat, jelas, dan mudah digunakan semua unit kerja." },
+    { "title": "Terukur", "description": "Harga, variant, stok, dan status order tercatat dalam satu sistem." },
+    { "title": "Terpercaya", "description": "Produk dan layanan dikelola langsung oleh tim internal perusahaan." }
+  ],
+  "capabilities": [
+    "Kebutuhan operasional kantor",
+    "Perangkat dan perlengkapan kerja",
+    "Layanan administrasi internal",
+    "Dukungan proyek dan unit bisnis",
+    "Pelacakan order tanpa login",
+    "Varian produk dan stok terkontrol"
+  ],
+  "whatsappLinks": [
+    { "label": "Procurement", "number": "628111111111", "message": "Halo, saya ingin bertanya tentang produk atau layanan internal." },
+    { "label": "Customer Support", "number": "628122222222", "message": "Halo, saya membutuhkan bantuan terkait order marketplace internal." }
+  ]
+}
