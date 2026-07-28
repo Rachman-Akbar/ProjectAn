@@ -2,20 +2,31 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'order_number',
+        'customer_id',
+        'customer_type',
+        'guest_email',
         'guest_name',
-        'guest_division',
         'guest_phone',
         'guest_address',
+        'guest_nik',
+        'guest_npwp',
+        'guest_province',
+        'guest_city',
+        'guest_company_name',
+        'guest_postal_code',
+        'guest_country',
         'guest_notes',
         'subtotal',
         'total_amount',
@@ -34,6 +45,11 @@ class Order extends Model
             'total_amount' => 'decimal:2',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function items(): HasMany

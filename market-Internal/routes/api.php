@@ -19,8 +19,10 @@ Route::get('/media/products/{filename}', [MediaController::class, 'product'])
 
 Route::post('/checkout', [OrderController::class, 'checkout'])->middleware('throttle:10,1');
 Route::get('/orders/track', [OrderController::class, 'track'])->middleware('throttle:30,1');
-Route::put('/orders/track/{orderNumber}', [OrderController::class, 'updateGuest'])->middleware('throttle:15,1');
-Route::post('/orders/{orderNumber}/cancel', [OrderController::class, 'cancelGuest'])->middleware('throttle:10,1');
+Route::match(['put', 'patch'], '/orders/track/{orderNumber}', [OrderController::class, 'updateGuest'])
+    ->middleware('throttle:15,1');
+Route::post('/orders/{orderNumber}/cancel', [OrderController::class, 'cancelGuest'])
+    ->middleware('throttle:10,1');
 
 Route::prefix('admin')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:8,1');
@@ -31,11 +33,11 @@ Route::prefix('admin')->group(function (): void {
         Route::get('/dashboard', AdminDashboardController::class);
 
         Route::get('/products/attribute-options', [ProductController::class, 'attributeOptions']);
-        Route::apiResource('/categories', CategoryController::class);
+        Route::apiResource('categories', CategoryController::class);
         Route::post('/categories/{category}', [CategoryController::class, 'update']);
-        Route::apiResource('/products', ProductController::class);
+        Route::apiResource('products', ProductController::class);
         Route::post('/products/{product}', [ProductController::class, 'update']);
-        Route::apiResource('/orders', OrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
+        Route::apiResource('orders', OrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
     });
 
     Route::middleware(['auth:sanctum', 'role:admin'])->group(function (): void {

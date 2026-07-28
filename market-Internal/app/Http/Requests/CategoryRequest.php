@@ -12,6 +12,21 @@ class CategoryRequest extends FormRequest
         return in_array($this->user()?->role, ['admin', 'seller'], true);
     }
 
+    protected function prepareForValidation(): void
+    {
+        $merge = [];
+
+        if ($this->has('is_active')) {
+            $merge['is_active'] = filter_var($this->input('is_active'), FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (! $this->has('sort_order')) {
+            $merge['sort_order'] = 0;
+        }
+
+        $this->merge($merge);
+    }
+
     public function rules(): array
     {
         $category = $this->route('category');

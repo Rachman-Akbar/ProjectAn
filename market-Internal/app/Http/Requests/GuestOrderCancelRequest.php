@@ -11,10 +11,18 @@ class GuestOrderCancelRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'email' => mb_strtolower(trim((string) $this->input('email', $this->input('buyer_email', '')))),
+            'cancel_reason' => $this->input('cancel_reason', $this->input('reason')),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+()\-\s]+$/'],
+            'email' => ['required', 'string', 'email:rfc', 'max:190'],
             'cancel_reason' => ['nullable', 'string', 'max:2000'],
         ];
     }

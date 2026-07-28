@@ -196,7 +196,7 @@ class CategoryController extends Controller
     public function destroy(Category $category): JsonResponse
     {
         abort_if(
-            $category->products()->exists(),
+            $category->products()->exists() || $category->primaryProducts()->exists(),
             422,
             'Kategori masih digunakan produk dan tidak dapat dihapus.'
         );

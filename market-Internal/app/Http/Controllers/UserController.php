@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
 
 class UserController extends Controller
 {
@@ -27,10 +28,7 @@ class UserController extends Controller
                         ->orWhere('department', 'like', "%{$search}%");
                 });
             })
-            ->when(
-                $request->filled('role'),
-                fn ($query) => $query->where('role', $request->input('role'))
-            )
+            ->when($request->filled('role'), fn ($query) => $query->where('role', $request->input('role')))
             ->latest('id')
             ->paginate(min(100, max(1, $request->integer('per_page', 20))))
             ->withQueryString();
@@ -62,11 +60,19 @@ class UserController extends Controller
             unset($data['password']);
         }
 
-        if (
-            $request->user()->is($user)
-            && (! (bool) $data['is_active'] || $data['role'] !== 'admin')
-        ) {
+        $nextRole = $data['role'] ?? $user->role;
+        $nextActive = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : (bool) $user->is_active;
+
+        if ($request->user()->is($user) && (! $nextActive || $nextRole !== 'admin')) {
             abort(422, 'Admin tidak dapat menonaktifkan atau menurunkan role akun sendiri.');
+        }
+
+        if ($user->role === 'admin' && $user->is_active && (! $nextActive || $nextRole !== 'admin')) {
+            abort_if(
+                User::query()->where('role', 'admin')->where('is_active', true)->count() <= 1,
+                422,
+                'Minimal harus ada satu admin aktif.'
+            );
         }
 
         $user->update($data);
@@ -74,23 +80,16 @@ class UserController extends Controller
         return new UserResource($user->fresh());
     }
 
-    public function destroy(Request $request, User $user)
+    public function destroy(Request $request, User $user): Response
     {
         $this->ensureAdmin($request);
 
-        abort_if(
-            $request->user()->is($user),
-            422,
-            'Anda tidak dapat menghapus akun sendiri.'
-        );
+        abort_if($request->user()->is($user), 422, 'Anda tidak dapat menghapus akun sendiri.');
 
         abort_if(
             $user->role === 'admin'
                 && $user->is_active
-                && User::query()
-                    ->where('role', 'admin')
-                    ->where('is_active', true)
-                    ->count() <= 1,
+                && User::query()->where('role', 'admin')->where('is_active', true)->count() <= 1,
             422,
             'Minimal harus ada satu admin aktif.'
         );
@@ -102,10 +101,6 @@ class UserController extends Controller
 
     private function ensureAdmin(Request $request): void
     {
-        abort_unless(
-            $request->user()?->role === 'admin',
-            403,
-            'Hanya admin yang dapat mengelola user.'
-        );
+        abort_unless($request->user()?->role === 'admin', 403, 'Hanya admin yang dapat mengelola user.');
     }
 }

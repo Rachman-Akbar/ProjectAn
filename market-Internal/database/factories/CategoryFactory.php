@@ -13,11 +13,11 @@ class CategoryFactory extends Factory
 
         return [
             'name' => Str::title($name),
-            'slug' => Str::slug($name).'-'.fake()->unique()->numberBetween(1, 99999),
-            'description' => fake()->sentence(),
+            'slug' => Str::slug($name).'-'.fake()->unique()->numberBetween(100, 99999),
+            'description' => fake()->sentence(12),
             'image' => null,
             'is_active' => true,
-            'sort_order' => fake()->numberBetween(0, 20),
+            'sort_order' => fake()->numberBetween(0, 100),
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -16,20 +17,38 @@ class OrderService
             $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
             $locked->load('items');
 
-            $locked->fill([
-                'guest_name' => trim($data['guest_name']),
-                'guest_division' => trim($data['guest_division']),
-                'guest_phone' => trim($data['guest_phone']),
-                'guest_address' => trim($data['guest_address']),
-                'guest_notes' => $data['guest_notes'] ?? null,
-                'payment_method' => $data['payment_method'],
-                'payment_status' => $data['payment_status'],
-                'admin_notes' => $data['admin_notes'] ?? null,
-            ]);
+            $this->fillWhenPresent($locked, $data, 'customer_type');
+            $this->fillWhenPresent($locked, $data, 'guest_email', fn ($value): string => mb_strtolower(trim((string) $value)));
+            $this->fillWhenPresent($locked, $data, 'guest_name', fn ($value): string => trim((string) $value));
+            $this->fillWhenPresent($locked, $data, 'guest_phone', fn ($value): string => trim((string) $value));
+            $this->fillWhenPresent($locked, $data, 'guest_address', fn ($value): string => trim((string) $value));
+            $this->fillWhenPresent($locked, $data, 'guest_nik', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_npwp', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_province', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_city', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_company_name', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_postal_code', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_country', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+            $this->fillWhenPresent($locked, $data, 'guest_notes', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+
+            if ($locked->customer_type === 'individual') {
+                $locked->guest_nik = null;
+                $locked->guest_npwp = null;
+                $locked->guest_province = null;
+                $locked->guest_city = null;
+                $locked->guest_company_name = null;
+                $locked->guest_postal_code = null;
+                $locked->guest_country = null;
+            }
+            $this->fillWhenPresent($locked, $data, 'payment_method');
+            $this->fillWhenPresent($locked, $data, 'payment_status');
+            $this->fillWhenPresent($locked, $data, 'admin_notes', fn ($value): ?string => filled($value) ? trim((string) $value) : null);
+
+            $this->syncCustomer($locked);
 
             $this->applyTransition(
                 $locked,
-                $data['status'],
+                $data['status'] ?? $locked->status,
                 $actor,
                 $data['cancel_reason'] ?? null,
                 $data['admin_notes'] ?? null
@@ -38,7 +57,7 @@ class OrderService
             $locked->save();
 
             return $locked->fresh()->load(['items', 'statusHistories.user']);
-        });
+        }, 3);
     }
 
     public function transition(
@@ -55,7 +74,7 @@ class OrderService
             $locked->save();
 
             return $locked->fresh()->load(['items', 'statusHistories.user']);
-        });
+        }, 3);
     }
 
     public function cancelGuest(Order $order, ?string $reason): Order
@@ -74,7 +93,7 @@ class OrderService
             $locked->save();
 
             return $locked->fresh()->load(['items', 'statusHistories.user']);
-        });
+        }, 3);
     }
 
     public function delete(Order $order, ?User $actor = null): void
@@ -95,7 +114,37 @@ class OrderService
             }
 
             $locked->delete();
-        });
+        }, 3);
+    }
+
+
+    private function syncCustomer(Order $order): void
+    {
+        $email = mb_strtolower(trim((string) $order->guest_email));
+
+        if ($email === '') {
+            return;
+        }
+
+        $customer = Customer::query()->updateOrCreate(
+            ['email' => $email],
+            [
+                'customer_type' => $order->customer_type,
+                'name' => trim((string) $order->guest_name),
+                'phone' => trim((string) $order->guest_phone),
+                'address' => trim((string) $order->guest_address),
+                'nik' => $order->guest_nik,
+                'npwp' => $order->guest_npwp,
+                'province' => $order->guest_province,
+                'city' => $order->guest_city,
+                'company_name' => $order->guest_company_name,
+                'postal_code' => $order->guest_postal_code,
+                'country' => $order->guest_country,
+            ]
+        );
+
+        $order->customer_id = $customer->id;
+        $order->guest_email = $email;
     }
 
     private function applyTransition(
@@ -159,7 +208,7 @@ class OrderService
                 ]);
             }
 
-            if ($variant->track_stock && ($variant->stock ?? 0) < $item->quantity) {
+            if ($variant->track_stock && (int) ($variant->stock ?? 0) < $item->quantity) {
                 throw ValidationException::withMessages([
                     'status' => "Stok {$item->product_name} - {$item->variant_name} tidak mencukupi untuk membuka kembali order.",
                 ]);
@@ -175,5 +224,14 @@ class OrderService
                 $variant->decrement('stock', $item->quantity);
             }
         }
+    }
+
+    private function fillWhenPresent(Order $order, array $data, string $key, ?callable $transform = null): void
+    {
+        if (! array_key_exists($key, $data)) {
+            return;
+        }
+
+        $order->{$key} = $transform ? $transform($data[$key]) : $data[$key];
     }
 }

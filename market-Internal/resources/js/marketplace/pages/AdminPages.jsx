@@ -29,7 +29,7 @@ export function AdminLoginPage() {
     const navigate = useNavigate();
     const { login, loading, user } = useAuthStore();
     const [email, setEmail] = useState("admin@company.local");
-    const [password, setPassword] = useState("admin12345");
+    const [password, setPassword] = useState("12345678");
     const [remember, setRemember] = useState(false);
     const [error, setError] = useState("");
     useEffect(() => {
@@ -364,6 +364,7 @@ export function AdminCategoriesPage() {
               <tr className="bg-slate-50 text-left">
                 <th className="p-4">Nama</th>
                 <th>Slug</th>
+                <th>Urutan</th>
                 <th>Produk</th>
                 <th>Status</th>
                 <th />
@@ -373,6 +374,7 @@ export function AdminCategoriesPage() {
               {query.data?.map((category) => (<tr key={category.id} className="border-t">
                   <td className="p-4 font-bold">{category.name}</td>
                   <td>{category.slug}</td>
+                  <td>{category.sort_order ?? 0}</td>
                   <td>{category.products_count ?? 0}</td>
                   <td>{category.is_active ? "Aktif" : "Nonaktif"}</td>
                   <td className="text-right">
@@ -712,10 +714,18 @@ export function AdminUsersPage() {
     </div>);
 }
 const blankOrder = () => ({
+    customer_type: "individual",
     name: "",
-    division: "",
+    email: "",
     phone: "",
     address: "",
+    nik: "",
+    npwp: "",
+    province: "",
+    city: "",
+    company_name: "",
+    postal_code: "",
+    country: "Indonesia",
     notes: "",
     payment_method: "internal_billing",
     items: [{ product_variant_id: "", quantity: "1" }],
@@ -775,10 +785,18 @@ export function AdminOrdersPage() {
         setDetailError("");
         try {
             const result = resourceData(await api.put(`/admin/orders/${selected.id}`, {
+                customer_type: selected.customer_type,
+                guest_email: selected.guest_email,
                 guest_name: selected.guest_name,
-                guest_division: selected.guest_division,
                 guest_phone: selected.guest_phone,
                 guest_address: selected.guest_address,
+                guest_nik: selected.customer_type === "business" ? selected.guest_nik : null,
+                guest_npwp: selected.customer_type === "business" ? selected.guest_npwp : null,
+                guest_province: selected.customer_type === "business" ? selected.guest_province : null,
+                guest_city: selected.customer_type === "business" ? selected.guest_city : null,
+                guest_company_name: selected.customer_type === "business" ? selected.guest_company_name : null,
+                guest_postal_code: selected.customer_type === "business" ? selected.guest_postal_code : null,
+                guest_country: selected.customer_type === "business" ? selected.guest_country : null,
                 guest_notes: selected.guest_notes,
                 status: selected.status,
                 payment_status: selected.payment_status,
@@ -840,10 +858,18 @@ export function AdminOrdersPage() {
         setCreating(true);
         try {
             const order = resourceData(await api.post("/admin/orders", {
+                customer_type: createForm.customer_type,
                 name: createForm.name,
-                division: createForm.division,
+                email: createForm.email,
                 phone: createForm.phone,
                 address: createForm.address,
+                nik: createForm.customer_type === "business" ? createForm.nik : null,
+                npwp: createForm.customer_type === "business" ? createForm.npwp : null,
+                province: createForm.customer_type === "business" ? createForm.province : null,
+                city: createForm.customer_type === "business" ? createForm.city : null,
+                company_name: createForm.customer_type === "business" ? createForm.company_name : null,
+                postal_code: createForm.customer_type === "business" ? createForm.postal_code : null,
+                country: createForm.customer_type === "business" ? createForm.country : null,
                 notes: createForm.notes || null,
                 payment_method: createForm.payment_method,
                 items,
@@ -930,7 +956,7 @@ export function AdminOrdersPage() {
                   <td className="p-4 font-bold">{order.order_number}</td>
                   <td>
                     {order.guest_name}
-                    <small className="block text-slate-400">{order.guest_division}</small>
+                    <small className="block text-slate-400">{order.guest_email}</small>
                   </td>
                   <td>{dateTime(order.created_at)}</td>
                   <td>
@@ -968,20 +994,32 @@ export function AdminOrdersPage() {
 
             {createError ? (<p className="mt-4 rounded-xl bg-rose-50 p-3 text-rose-700">{createError}</p>) : null}
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <input required placeholder="Nama buyer" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} className={fieldClass}/>
-              <input required placeholder="Divisi / Unit" value={createForm.division} onChange={(event) => setCreateForm({ ...createForm, division: event.target.value })} className={fieldClass}/>
-              <input required placeholder="No. HP" value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} className={fieldClass}/>
-              <select value={createForm.payment_method} onChange={(event) => setCreateForm({
-                ...createForm,
-                payment_method: event.target.value,
-            })} className={fieldClass}>
-                <option value="internal_billing">Internal Billing</option>
-                <option value="bank_transfer">Transfer Manual</option>
-                <option value="cod">COD</option>
-              </select>
-              <textarea required rows={3} placeholder="Alamat" value={createForm.address} onChange={(event) => setCreateForm({ ...createForm, address: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
-              <textarea rows={2} placeholder="Catatan buyer" value={createForm.notes} onChange={(event) => setCreateForm({ ...createForm, notes: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
+            <div className="mt-5 grid gap-4">
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                <button type="button" onClick={() => setCreateForm({ ...createForm, customer_type: "individual" })} className={`rounded-lg px-4 py-3 text-sm font-black ${createForm.customer_type === "individual" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}>Perorangan</button>
+                <button type="button" onClick={() => setCreateForm({ ...createForm, customer_type: "business" })} className={`rounded-lg px-4 py-3 text-sm font-black ${createForm.customer_type === "business" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}>Badan Usaha</button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {createForm.customer_type === "business" ? <>
+                  <input required placeholder="Perusahaan" value={createForm.company_name} onChange={(event) => setCreateForm({ ...createForm, company_name: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
+                  <input required placeholder="Nama penanggung jawab" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} className={fieldClass}/>
+                  <input required inputMode="numeric" maxLength={16} pattern="[0-9]{16}" placeholder="NIK 16 digit" value={createForm.nik} onChange={(event) => setCreateForm({ ...createForm, nik: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="NPWP" value={createForm.npwp} onChange={(event) => setCreateForm({ ...createForm, npwp: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Negara" value={createForm.country} onChange={(event) => setCreateForm({ ...createForm, country: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Provinsi" value={createForm.province} onChange={(event) => setCreateForm({ ...createForm, province: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Kota" value={createForm.city} onChange={(event) => setCreateForm({ ...createForm, city: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Kode Pos" value={createForm.postal_code} onChange={(event) => setCreateForm({ ...createForm, postal_code: event.target.value })} className={fieldClass}/>
+                </> : <input required placeholder="Nama buyer" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} className={`${fieldClass} md:col-span-2`}/>} 
+                <input required type="email" placeholder="Email buyer" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} className={fieldClass}/>
+                <input required placeholder="No. HP" value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} className={fieldClass}/>
+                <select value={createForm.payment_method} onChange={(event) => setCreateForm({ ...createForm, payment_method: event.target.value })} className={`${fieldClass} md:col-span-2`}>
+                  <option value="internal_billing">Internal Billing</option>
+                  <option value="bank_transfer">Transfer Manual</option>
+                  <option value="cod">COD</option>
+                </select>
+                <textarea required rows={3} placeholder="Alamat" value={createForm.address} onChange={(event) => setCreateForm({ ...createForm, address: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
+                <textarea rows={2} placeholder="Catatan buyer" value={createForm.notes} onChange={(event) => setCreateForm({ ...createForm, notes: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
+              </div>
             </div>
 
             <section className="mt-6 rounded-2xl border bg-slate-50 p-4">
@@ -1035,8 +1073,21 @@ export function AdminOrdersPage() {
 
             <div className="mt-5 grid gap-5 lg:grid-cols-2">
               <section className="grid gap-3">
+                <select value={selected.customer_type ?? "individual"} onChange={(event) => updateSelected({ customer_type: event.target.value })} className={fieldClass}>
+                  <option value="individual">Perorangan</option>
+                  <option value="business">Badan Usaha</option>
+                </select>
+                {selected.customer_type === "business" ? <>
+                  <input required placeholder="Perusahaan" value={selected.guest_company_name ?? ""} onChange={(event) => updateSelected({ guest_company_name: event.target.value })} className={fieldClass}/>
+                  <input required inputMode="numeric" maxLength={16} pattern="[0-9]{16}" placeholder="NIK" value={selected.guest_nik ?? ""} onChange={(event) => updateSelected({ guest_nik: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="NPWP" value={selected.guest_npwp ?? ""} onChange={(event) => updateSelected({ guest_npwp: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Negara" value={selected.guest_country ?? ""} onChange={(event) => updateSelected({ guest_country: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Provinsi" value={selected.guest_province ?? ""} onChange={(event) => updateSelected({ guest_province: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Kota" value={selected.guest_city ?? ""} onChange={(event) => updateSelected({ guest_city: event.target.value })} className={fieldClass}/>
+                  <input required placeholder="Kode Pos" value={selected.guest_postal_code ?? ""} onChange={(event) => updateSelected({ guest_postal_code: event.target.value })} className={fieldClass}/>
+                </> : null}
+                <input type="email" value={selected.guest_email} onChange={(event) => updateSelected({ guest_email: event.target.value })} className={fieldClass}/>
                 <input value={selected.guest_name} onChange={(event) => updateSelected({ guest_name: event.target.value })} className={fieldClass}/>
-                <input value={selected.guest_division} onChange={(event) => updateSelected({ guest_division: event.target.value })} className={fieldClass}/>
                 <input value={selected.guest_phone} onChange={(event) => updateSelected({ guest_phone: event.target.value })} className={fieldClass}/>
                 <textarea rows={3} value={selected.guest_address} onChange={(event) => updateSelected({ guest_address: event.target.value })} className={fieldClass}/>
                 <textarea rows={3} value={selected.guest_notes ?? ""} onChange={(event) => updateSelected({ guest_notes: event.target.value })} placeholder="Catatan buyer" className={fieldClass}/>

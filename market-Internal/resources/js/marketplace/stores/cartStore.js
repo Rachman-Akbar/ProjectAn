@@ -68,8 +68,12 @@ export const useCartStore = create()(persist((set) => ({
     clear: () => set({ items: [] }),
 }), {
     name: "kishamarket-cart-v4",
-    version: 5,
-    migrate: (persisted) => {
+    version: 6,
+    migrate: (persisted, version) => {
+        const persistedVersion = Number(version);
+        if (!Number.isFinite(persistedVersion) || persistedVersion < 6) {
+            return { items: [] };
+        }
         const items = Array.isArray(persisted?.items)
             ? persisted.items.filter((item) => item?.product?.id && item?.variant?.id)
             : [];

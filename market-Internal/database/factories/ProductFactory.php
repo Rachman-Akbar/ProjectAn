@@ -3,49 +3,28 @@
 namespace Database\Factories;
 
 use App\Models\Category;
-use App\Models\Product;
-use App\Models\ProductVariant;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
 class ProductFactory extends Factory
 {
-    protected $model = Product::class;
-
     public function definition(): array
     {
-        $name = fake()->unique()->words(3, true);
+        $name = Str::title(fake()->unique()->words(3, true));
 
         return [
-            'category_id' => Category::factory(),
-            'name' => Str::title($name),
+            'primary_category_id' => Category::factory(),
+            'name' => $name,
             'slug' => Str::slug($name).'-'.fake()->unique()->numberBetween(100, 99999),
-            'type' => 'product',
-            'description' => fake()->paragraph(),
+            'type' => fake()->randomElement(['product', 'service']),
+            'description' => fake()->paragraphs(2, true),
             'brand' => fake()->company(),
-            'images' => [],
-            'rating' => 0,
-            'review_count' => 0,
+            'thumbnail' => null,
             'status' => 'published',
-            'is_featured' => false,
+            'is_featured' => fake()->boolean(25),
             'is_active' => true,
+            'rating' => fake()->randomFloat(1, 3, 5),
+            'review_count' => fake()->numberBetween(0, 500),
         ];
-    }
-
-    public function configure(): static
-    {
-        return $this->afterCreating(function (Product $product): void {
-            ProductVariant::query()->create([
-                'product_id' => $product->id,
-                'sku' => 'SKU-'.$product->id.'-'.Str::upper(Str::random(6)),
-                'name' => 'Default',
-                'price' => 125000,
-                'attributes' => [],
-                'track_stock' => true,
-                'stock' => 5,
-                'is_default' => true,
-                'is_active' => true,
-            ]);
-        });
     }
 }

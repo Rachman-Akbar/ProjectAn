@@ -15,12 +15,23 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
-            'password' => static::$password ??= Hash::make('password'),
-            'role' => 'seller',
-            'phone' => fake()->phoneNumber(),
-            'department' => fake()->randomElement(['Procurement', 'Finance', 'Operations']),
+            'email_verified_at' => now(),
+            'password' => static::$password ??= Hash::make('12345678'),
+            'role' => fake()->randomElement(['admin', 'seller']),
+            'phone' => '08'.fake()->numerify('##########'),
+            'department' => fake()->randomElement(['Finance', 'HR', 'IT', 'General Affairs', 'Procurement']),
             'is_active' => true,
             'remember_token' => Str::random(10),
         ];
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn (): array => ['role' => 'admin']);
+    }
+
+    public function seller(): static
+    {
+        return $this->state(fn (): array => ['role' => 'seller']);
     }
 }

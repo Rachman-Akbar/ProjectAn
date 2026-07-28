@@ -11,11 +11,17 @@ class GuestOrderLookupRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'email' => mb_strtolower(trim((string) $this->input('email', $this->input('buyer_email', '')))),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
-            'order_number' => ['required', 'string', 'max:100', 'regex:/^INV-[0-9]{8}-[0-9]{3,}$/'],
-            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+()\-\s]+$/'],
+            'email' => ['required', 'string', 'email:rfc', 'max:190'],
         ];
     }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImagePlus, Plus, Star, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ImagePlus, Images, Info, Layers, Plus, Star, Trash2, X } from "lucide-react";
 import { fieldClass } from "@/components/Common";
 import { api, collectionData, errorMessage, resourceData } from "@/lib/api";
 
@@ -30,7 +30,12 @@ const emptyAttribute = () => ({
     value: "",
 });
 
+function createClientKey() {
+    return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
 const emptyVariant = (isDefault = false) => ({
+    _key: createClientKey(),
     id: null,
     name: "",
     sku: "",
@@ -45,6 +50,10 @@ const emptyVariant = (isDefault = false) => ({
 function normalizeBoolean(value, fallback = false) {
     if (value === null || value === undefined) {
         return fallback;
+    }
+
+    if (typeof value === "string") {
+        return !["", "0", "false", "off", "no"].includes(value.trim().toLowerCase());
     }
 
     return Boolean(value);
@@ -149,6 +158,7 @@ function normalizeVariant(variant, index) {
         : [emptyAttribute()];
 
     return {
+        _key: variant?.id ? `variant-${variant.id}` : createClientKey(),
         id: variant?.id ?? null,
         name: String(variant?.name ?? ""),
         sku: String(variant?.sku ?? ""),
@@ -188,8 +198,11 @@ function ImagePreview({ src, alt }) {
 
 export function ProductForm({ product, categories, onClose, onSaved }) {
     const fileInputRef = useRef(null);
+    const newImagesRef = useRef([]);
     const [form, setForm] = useState(emptyForm());
+    const [activeTab, setActiveTab] = useState("information");
     const [variantMode, setVariantMode] = useState(false);
+    const [expandedVariants, setExpandedVariants] = useState({});
     const [simpleVariant, setSimpleVariant] = useState(emptySimpleVariant());
     const [variants, setVariants] = useState([emptyVariant(true)]);
     const [existingImages, setExistingImages] = useState([]);
@@ -207,7 +220,10 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
         api.get("/admin/products/attribute-options")
             .then((response) => {
                 if (active) {
-                    setAttributeOptions(collectionData(response));
+                    setAttributeOptions(collectionData(response)
+                        .map((attribute) => typeof attribute === "string" ? attribute : attribute?.name)
+                        .map((name) => String(name ?? "").trim())
+                        .filter(Boolean));
                 }
             })
             .catch(() => {
@@ -232,7 +248,7 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
 
         setForm(product
             ? {
-                category_id: String(product.category_id ?? product.category?.id ?? ""),
+                category_id: String(product.primary_category_id ?? product.category_id ?? product.category?.id ?? ""),
                 name: String(product.name ?? ""),
                 slug: String(product.slug ?? ""),
                 type: String(product.type ?? "product"),
@@ -254,9 +270,16 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
                 stock: String(defaultVariant.stock ?? "0"),
             }
             : emptySimpleVariant());
-        setVariants(productVariants.length
+        const normalizedVariants = productVariants.length
             ? productVariants.map(normalizeVariant)
-            : [emptyVariant(true)]);
+            : [emptyVariant(true)];
+
+        setVariants(normalizedVariants);
+        setExpandedVariants(normalizedVariants.reduce((result, variant, index) => ({
+            ...result,
+            [variant._key]: index === 0,
+        }), {}));
+        setActiveTab("information");
         setExistingImages(productExistingImages(product));
         setNewImages((current) => {
             current.forEach((image) => URL.revokeObjectURL(image.url));
@@ -265,9 +288,13 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
         setError("");
     }, [product]);
 
-    useEffect(() => () => {
-        newImages.forEach((image) => URL.revokeObjectURL(image.url));
+    useEffect(() => {
+        newImagesRef.current = newImages;
     }, [newImages]);
+
+    useEffect(() => () => {
+        newImagesRef.current.forEach((image) => URL.revokeObjectURL(image.url));
+    }, []);
 
     const availableAttributeNames = useMemo(() => {
         const localNames = variants.flatMap((variant) => variant.attributes.map((attribute) => attribute.name));
@@ -299,7 +326,7 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
         setNewImages((current) => [
             ...current,
             ...accepted.map((file) => ({
-                id: `${file.name}-${file.lastModified}-${crypto.randomUUID?.() ?? Math.random()}`,
+                id: `${file.name}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() ?? Math.random()}`,
                 file,
                 url: URL.createObjectURL(file),
             })),
@@ -323,7 +350,14 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
     };
 
     const addVariant = () => {
-        setVariants((current) => [...current, emptyVariant(current.length === 0)]);
+        const variant = emptyVariant(variants.length === 0);
+
+        setVariants((current) => [...current, variant]);
+        setExpandedVariants((current) => ({ ...current, [variant._key]: true }));
+    };
+
+    const toggleVariant = (key) => {
+        setExpandedVariants((current) => ({ ...current, [key]: !current[key] }));
     };
 
     const updateVariant = (index, patch) => {
@@ -333,11 +367,23 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
     };
 
     const removeVariant = (index) => {
+        const removed = variants[index];
+
+        if (removed) {
+            setExpandedVariants((current) => {
+                const next = { ...current };
+                delete next[removed._key];
+                return next;
+            });
+        }
+
         setVariants((current) => {
             const next = current.filter((_, variantIndex) => variantIndex !== index);
 
             if (!next.length) {
-                return [emptyVariant(true)];
+                const fallback = emptyVariant(true);
+                setExpandedVariants((expanded) => ({ ...expanded, [fallback._key]: true }));
+                return [fallback];
             }
 
             if (!next.some((variant) => variant.is_default)) {
@@ -395,48 +441,56 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
 
     const validate = () => {
         if (!form.category_id || !form.name.trim()) {
-            return "Kategori dan nama produk wajib diisi.";
+            return { message: "Kategori dan nama produk wajib diisi.", tab: "information" };
         }
 
         if (variantMode) {
             if (!variants.length) {
-                return "Tambahkan minimal satu variant.";
+                return { message: "Tambahkan minimal satu variant.", tab: "pricing" };
             }
 
             if (variants.filter((variant) => variant.is_default).length !== 1) {
-                return "Pilih tepat satu variant default.";
+                return { message: "Pilih tepat satu variant default.", tab: "pricing" };
             }
 
             if (!variants.some((variant) => variant.is_active)) {
-                return "Minimal harus ada satu variant aktif.";
+                return { message: "Minimal harus ada satu variant aktif.", tab: "pricing" };
             }
 
             for (const variant of variants) {
                 if (!variant.name.trim() || variant.price === "") {
-                    return "Nama dan harga setiap variant wajib diisi.";
+                    return { message: "Nama dan harga setiap variant wajib diisi.", tab: "pricing", variantKey: variant._key };
                 }
 
                 const validAttributes = variant.attributes.filter((attribute) => attribute.name.trim() && attribute.value.trim());
 
                 if (!validAttributes.length) {
-                    return `Variant ${variant.name || "baru"} harus memiliki minimal satu atribut.`;
+                    return {
+                        message: `Variant ${variant.name || "baru"} harus memiliki minimal satu atribut.`,
+                        tab: "pricing",
+                        variantKey: variant._key,
+                    };
                 }
 
                 if (variant.track_stock && variant.stock === "") {
-                    return `Stok variant ${variant.name || "baru"} wajib diisi.`;
+                    return {
+                        message: `Stok variant ${variant.name || "baru"} wajib diisi.`,
+                        tab: "pricing",
+                        variantKey: variant._key,
+                    };
                 }
             }
         } else {
             if (simpleVariant.price === "") {
-                return "Harga produk wajib diisi.";
+                return { message: "Harga produk wajib diisi.", tab: "pricing" };
             }
 
             if (simpleVariant.track_stock && simpleVariant.stock === "") {
-                return "Stok produk wajib diisi.";
+                return { message: "Stok produk wajib diisi.", tab: "pricing" };
             }
         }
 
-        return "";
+        return null;
     };
 
     const submit = async (event) => {
@@ -444,7 +498,13 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
         const validationError = validate();
 
         if (validationError) {
-            setError(validationError);
+            setError(validationError.message);
+            setActiveTab(validationError.tab);
+
+            if (validationError.variantKey) {
+                setExpandedVariants((current) => ({ ...current, [validationError.variantKey]: true }));
+            }
+
             return;
         }
 
@@ -453,6 +513,7 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
 
         const body = new FormData();
         body.append("category_id", form.category_id);
+        body.append("primary_category_id", form.category_id);
         body.append("name", form.name.trim());
         body.append("slug", form.slug.trim());
         body.append("type", form.type);
@@ -525,6 +586,29 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
                     </button>
                 </div>
 
+                <div className="border-b bg-white px-5 pt-4 sm:px-7">
+                    <div className="flex gap-2 overflow-x-auto pb-4">
+                        {[
+                            { id: "information", label: "Informasi", icon: Info },
+                            { id: "images", label: `Gambar (${totalImages})`, icon: Images },
+                            { id: "pricing", label: variantMode ? `Variant (${variants.length})` : "Harga & Stok", icon: Layers },
+                        ].map((tab) => {
+                            const Icon = tab.icon;
+
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`inline-flex shrink-0 items-center gap-2 rounded-t-xl border-b-2 px-4 py-3 text-sm font-black transition ${activeTab === tab.id ? "border-emerald-600 text-emerald-700" : "border-transparent text-slate-500 hover:text-slate-900"}`}
+                                >
+                                    <Icon size={17} /> {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
                 <div className="grid gap-6 p-5 sm:p-7">
                     {error ? (
                         <p className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
@@ -532,153 +616,195 @@ export function ProductForm({ product, categories, onClose, onSaved }) {
                         </p>
                     ) : null}
 
-                    <section className="grid gap-4 rounded-2xl border p-5 md:grid-cols-2">
-                        <div className="md:col-span-2">
-                            <h3 className="font-black text-slate-950">Informasi Produk</h3>
-                        </div>
-                        <select required value={form.category_id} onChange={(event) => setForm({ ...form, category_id: event.target.value })} className={fieldClass}>
-                            <option value="">Pilih kategori</option>
-                            {(categories ?? []).map((category) => (
-                                <option key={category.id} value={category.id}>{category.name}</option>
-                            ))}
-                        </select>
-                        <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className={fieldClass}>
-                            <option value="product">Produk</option>
-                            <option value="service">Layanan</option>
-                        </select>
-                        <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nama produk" className={fieldClass} />
-                        <input value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} placeholder="Slug otomatis jika kosong" className={fieldClass} />
-                        <input value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} placeholder="Brand" className={fieldClass} />
-                        <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className={fieldClass}>
-                            <option value="draft">Draft</option>
-                            <option value="published">Published</option>
-                            <option value="archived">Archived</option>
-                        </select>
-                        <textarea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Deskripsi produk" className={`${fieldClass} md:col-span-2`} />
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                            <input type="checkbox" checked={form.is_featured} onChange={(event) => setForm({ ...form, is_featured: event.target.checked })} />
-                            Produk unggulan
-                        </label>
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                            <input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} />
-                            Produk aktif
-                        </label>
-                    </section>
-
-                    <section className="rounded-2xl border p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <h3 className="font-black text-slate-950">Gambar Produk</h3>
-                                <p className="mt-1 text-sm text-slate-500">JPG, PNG, atau WebP. Maksimal 5 MB per file.</p>
+                    {activeTab === "information" ? (
+                        <section className="grid gap-4 rounded-2xl border p-5 md:grid-cols-2">
+                            <div className="md:col-span-2">
+                                <h3 className="font-black text-slate-950">Informasi Produk</h3>
+                                <p className="mt-1 text-sm text-slate-500">Atur identitas, kategori, status, dan deskripsi produk.</p>
                             </div>
-                            <button type="button" disabled={totalImages >= MAX_IMAGES} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 font-bold disabled:opacity-40">
-                                <ImagePlus size={18} /> Tambah Gambar
-                            </button>
-                            <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={selectImages} className="hidden" />
-                        </div>
-
-                        <div className="mt-5 flex flex-wrap gap-3">
-                            {existingImages.map((image) => (
-                                <div key={image.id} className="relative h-36 w-36 overflow-hidden rounded-2xl border bg-slate-100">
-                                    <ImagePreview src={image.url} alt="Produk" />
-                                    <button type="button" onClick={() => removeExistingImage(image.id)} className="absolute right-2 top-2 rounded-full bg-white p-1.5 text-rose-600 shadow">
-                                        <X size={15} />
-                                    </button>
-                                </div>
-                            ))}
-                            {newImages.map((image) => (
-                                <div key={image.id} className="relative h-36 w-36 overflow-hidden rounded-2xl border bg-slate-100">
-                                    <ImagePreview src={image.url} alt={image.file.name} />
-                                    <button type="button" onClick={() => removeNewImage(image.id)} className="absolute right-2 top-2 rounded-full bg-white p-1.5 text-rose-600 shadow">
-                                        <X size={15} />
-                                    </button>
-                                </div>
-                            ))}
-                            {!totalImages ? (
-                                <div className="grid h-36 w-full place-items-center rounded-2xl border border-dashed bg-slate-50 text-sm font-bold text-slate-400 sm:w-72">
-                                    Belum ada gambar
-                                </div>
-                            ) : null}
-                        </div>
-                    </section>
-
-                    <section className="rounded-2xl border p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <h3 className="font-black text-slate-950">Harga dan Stok Produk</h3>
-                                <p className="mt-1 text-sm text-slate-500">Gunakan satu variant default atau beberapa variant beratribut.</p>
-                            </div>
-                            <label className="flex items-center gap-2 text-sm font-black text-slate-700">
-                                <input type="checkbox" checked={variantMode} onChange={(event) => setVariantMode(event.target.checked)} />
-                                Gunakan variant
+                            <select required value={form.category_id} onChange={(event) => setForm({ ...form, category_id: event.target.value })} className={fieldClass}>
+                                <option value="">Pilih kategori</option>
+                                {(categories ?? []).map((category) => (
+                                    <option key={category.id} value={category.id}>{category.name}</option>
+                                ))}
+                            </select>
+                            <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className={fieldClass}>
+                                <option value="product">Produk</option>
+                                <option value="service">Layanan</option>
+                            </select>
+                            <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nama produk" className={fieldClass} />
+                            <input value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} placeholder="Slug otomatis jika kosong" className={fieldClass} />
+                            <input value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} placeholder="Brand" className={fieldClass} />
+                            <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className={fieldClass}>
+                                <option value="draft">Draft</option>
+                                <option value="published">Published</option>
+                                <option value="archived">Archived</option>
+                            </select>
+                            <textarea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Deskripsi produk" className={`${fieldClass} md:col-span-2`} />
+                            <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                <input type="checkbox" checked={form.is_featured} onChange={(event) => setForm({ ...form, is_featured: event.target.checked })} />
+                                Produk unggulan
                             </label>
-                        </div>
+                            <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                <input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} />
+                                Produk aktif
+                            </label>
+                        </section>
+                    ) : null}
 
-                        {!variantMode ? (
-                            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                                <input value={simpleVariant.sku} onChange={(event) => setSimpleVariant({ ...simpleVariant, sku: event.target.value })} placeholder="SKU" className={fieldClass} />
-                                <input required type="number" min="0" step="0.01" value={simpleVariant.price} onChange={(event) => setSimpleVariant({ ...simpleVariant, price: event.target.value })} placeholder="Harga" className={fieldClass} />
-                                <label className="flex items-center gap-2 rounded-xl border px-4 text-sm font-bold">
-                                    <input type="checkbox" checked={simpleVariant.track_stock} onChange={(event) => setSimpleVariant({ ...simpleVariant, track_stock: event.target.checked })} />
-                                    Lacak stok
-                                </label>
-                                <input disabled={!simpleVariant.track_stock} required={simpleVariant.track_stock} type="number" min="0" step="1" value={simpleVariant.stock} onChange={(event) => setSimpleVariant({ ...simpleVariant, stock: event.target.value })} placeholder="Stok" className={fieldClass} />
+                    {activeTab === "images" ? (
+                        <section className="rounded-2xl border p-5">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h3 className="font-black text-slate-950">Gambar Produk</h3>
+                                    <p className="mt-1 text-sm text-slate-500">JPG, PNG, atau WebP. Maksimal 5 MB per file.</p>
+                                </div>
+                                <button type="button" disabled={totalImages >= MAX_IMAGES} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 font-bold disabled:opacity-40">
+                                    <ImagePlus size={18} /> Tambah Gambar
+                                </button>
+                                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={selectImages} className="hidden" />
                             </div>
-                        ) : (
-                            <div className="mt-5 grid gap-4">
-                                {variants.map((variant, variantIndex) => (
-                                    <article key={variant.id ?? `variant-${variantIndex}`} className="rounded-2xl border bg-slate-50 p-4">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <h4 className="font-black">Variant {variantIndex + 1}</h4>
-                                            <button type="button" onClick={() => removeVariant(variantIndex)} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50">
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
 
-                                        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                                            <input required value={variant.name} onChange={(event) => updateVariant(variantIndex, { name: event.target.value })} placeholder="Nama variant" className={fieldClass} />
-                                            <input value={variant.sku} onChange={(event) => updateVariant(variantIndex, { sku: event.target.value })} placeholder="SKU" className={fieldClass} />
-                                            <input required type="number" min="0" step="0.01" value={variant.price} onChange={(event) => updateVariant(variantIndex, { price: event.target.value })} placeholder="Harga" className={fieldClass} />
-                                            <input disabled={!variant.track_stock} required={variant.track_stock} type="number" min="0" step="1" value={variant.stock} onChange={(event) => updateVariant(variantIndex, { stock: event.target.value })} placeholder="Stok" className={fieldClass} />
-                                        </div>
+                            <div className="mt-5 flex flex-wrap gap-3">
+                                {existingImages.map((image) => (
+                                    <div key={image.id} className="relative h-36 w-36 overflow-hidden rounded-2xl border bg-slate-100">
+                                        <ImagePreview src={image.url} alt="Produk" />
+                                        <button type="button" onClick={() => removeExistingImage(image.id)} className="absolute right-2 top-2 rounded-full bg-white p-1.5 text-rose-600 shadow">
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {newImages.map((image) => (
+                                    <div key={image.id} className="relative h-36 w-36 overflow-hidden rounded-2xl border bg-slate-100">
+                                        <ImagePreview src={image.url} alt={image.file.name} />
+                                        <button type="button" onClick={() => removeNewImage(image.id)} className="absolute right-2 top-2 rounded-full bg-white p-1.5 text-rose-600 shadow">
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {!totalImages ? (
+                                    <div className="grid h-36 w-full place-items-center rounded-2xl border border-dashed bg-slate-50 text-sm font-bold text-slate-400 sm:w-72">
+                                        Belum ada gambar
+                                    </div>
+                                ) : null}
+                            </div>
+                        </section>
+                    ) : null}
 
-                                        <div className="mt-4 flex flex-wrap gap-5">
-                                            <label className="flex items-center gap-2 text-sm font-bold">
-                                                <input type="radio" name="default_variant" checked={variant.is_default} onChange={() => setDefaultVariant(variantIndex)} />
-                                                <Star size={16} /> Default
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm font-bold">
-                                                <input type="checkbox" checked={variant.track_stock} onChange={(event) => updateVariant(variantIndex, { track_stock: event.target.checked })} />
-                                                Lacak stok
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm font-bold">
-                                                <input type="checkbox" checked={variant.is_active} onChange={(event) => updateVariant(variantIndex, { is_active: event.target.checked })} />
-                                                Aktif
-                                            </label>
-                                        </div>
+                    {activeTab === "pricing" ? (
+                        <section className="rounded-2xl border p-5">
+                            <div>
+                                <h3 className="font-black text-slate-950">Harga, Stok, dan Variant</h3>
+                                <p className="mt-1 text-sm text-slate-500">Pilih produk sederhana atau gunakan variant yang dibentuk dari atribut.</p>
+                            </div>
 
-                                        <div className="mt-4 grid gap-3">
-                                            {variant.attributes.map((attribute, attributeIndex) => (
-                                                <div key={attributeIndex} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                                                    <input list="product-attribute-options" value={attribute.name} onChange={(event) => updateAttribute(variantIndex, attributeIndex, { name: event.target.value })} placeholder="Nama atribut, misalnya Warna" className={fieldClass} />
-                                                    <input value={attribute.value} onChange={(event) => updateAttribute(variantIndex, attributeIndex, { value: event.target.value })} placeholder="Nilai, misalnya Hitam" className={fieldClass} />
-                                                    <button type="button" onClick={() => removeAttribute(variantIndex, attributeIndex)} className="rounded-xl border p-3 text-rose-600">
+                            <div className="mt-5 inline-flex rounded-xl border bg-slate-100 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setVariantMode(false)}
+                                    className={`rounded-lg px-4 py-2.5 text-sm font-black transition ${!variantMode ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}
+                                >
+                                    Tanpa Variant
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setVariantMode(true)}
+                                    className={`rounded-lg px-4 py-2.5 text-sm font-black transition ${variantMode ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}
+                                >
+                                    Gunakan Variant
+                                </button>
+                            </div>
+
+                            {!variantMode ? (
+                                <div className="mt-5">
+                                    <p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">Sistem akan menyimpan satu variant default otomatis. Buyer tidak perlu memilih variant.</p>
+                                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                                        <input value={simpleVariant.sku} onChange={(event) => setSimpleVariant({ ...simpleVariant, sku: event.target.value })} placeholder="SKU" className={fieldClass} />
+                                        <input required type="number" min="0" step="0.01" value={simpleVariant.price} onChange={(event) => setSimpleVariant({ ...simpleVariant, price: event.target.value })} placeholder="Harga" className={fieldClass} />
+                                        <label className="flex items-center gap-2 rounded-xl border px-4 text-sm font-bold">
+                                            <input type="checkbox" checked={simpleVariant.track_stock} onChange={(event) => setSimpleVariant({ ...simpleVariant, track_stock: event.target.checked })} />
+                                            Lacak stok
+                                        </label>
+                                        <input disabled={!simpleVariant.track_stock} required={simpleVariant.track_stock} type="number" min="0" step="1" value={simpleVariant.stock} onChange={(event) => setSimpleVariant({ ...simpleVariant, stock: event.target.value })} placeholder="Stok" className={fieldClass} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-5 grid gap-4">
+                                    {variants.map((variant, variantIndex) => {
+                                        const expanded = Boolean(expandedVariants[variant._key]);
+                                        const attributeSummary = variant.attributes
+                                            .filter((attribute) => attribute.name.trim() && attribute.value.trim())
+                                            .map((attribute) => `${attribute.name}: ${attribute.value}`)
+                                            .join(" · ");
+
+                                        return (
+                                            <article key={variant._key} className="overflow-hidden rounded-2xl border bg-slate-50">
+                                                <div className="flex items-center gap-3 p-4">
+                                                    <button type="button" onClick={() => toggleVariant(variant._key)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                                                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-slate-600 shadow-sm">
+                                                            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                                        </span>
+                                                        <span className="min-w-0">
+                                                            <span className="block truncate font-black">{variant.name.trim() || `Variant ${variantIndex + 1}`}</span>
+                                                            <span className="mt-0.5 block truncate text-xs text-slate-500">{attributeSummary || "Atribut belum diisi"}</span>
+                                                        </span>
+                                                    </button>
+                                                    {variant.is_default ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">Default</span> : null}
+                                                    <button type="button" onClick={() => removeVariant(variantIndex)} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50">
                                                         <Trash2 size={18} />
                                                     </button>
                                                 </div>
-                                            ))}
-                                            <button type="button" onClick={() => addAttribute(variantIndex)} className="inline-flex w-fit items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-bold">
-                                                <Plus size={16} /> Tambah Atribut
-                                            </button>
-                                        </div>
-                                    </article>
-                                ))}
-                                <button type="button" onClick={addVariant} className="inline-flex w-fit items-center gap-2 rounded-xl border px-4 py-2.5 font-black">
-                                    <Plus size={18} /> Tambah Variant
-                                </button>
-                            </div>
-                        )}
-                    </section>
+
+                                                {expanded ? (
+                                                    <div className="border-t bg-white p-4">
+                                                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                                                            <input required value={variant.name} onChange={(event) => updateVariant(variantIndex, { name: event.target.value })} placeholder="Nama variant" className={fieldClass} />
+                                                            <input value={variant.sku} onChange={(event) => updateVariant(variantIndex, { sku: event.target.value })} placeholder="SKU" className={fieldClass} />
+                                                            <input required type="number" min="0" step="0.01" value={variant.price} onChange={(event) => updateVariant(variantIndex, { price: event.target.value })} placeholder="Harga" className={fieldClass} />
+                                                            <input disabled={!variant.track_stock} required={variant.track_stock} type="number" min="0" step="1" value={variant.stock} onChange={(event) => updateVariant(variantIndex, { stock: event.target.value })} placeholder="Stok" className={fieldClass} />
+                                                        </div>
+
+                                                        <div className="mt-4 flex flex-wrap gap-5">
+                                                            <label className="flex items-center gap-2 text-sm font-bold">
+                                                                <input type="radio" name="default_variant" checked={variant.is_default} onChange={() => setDefaultVariant(variantIndex)} />
+                                                                <Star size={16} /> Default
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-sm font-bold">
+                                                                <input type="checkbox" checked={variant.track_stock} onChange={(event) => updateVariant(variantIndex, { track_stock: event.target.checked })} />
+                                                                Lacak stok
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-sm font-bold">
+                                                                <input type="checkbox" checked={variant.is_active} onChange={(event) => updateVariant(variantIndex, { is_active: event.target.checked })} />
+                                                                Aktif
+                                                            </label>
+                                                        </div>
+
+                                                        <div className="mt-4 grid gap-3">
+                                                            {variant.attributes.map((attribute, attributeIndex) => (
+                                                                <div key={attributeIndex} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                                                                    <input list="product-attribute-options" value={attribute.name} onChange={(event) => updateAttribute(variantIndex, attributeIndex, { name: event.target.value })} placeholder="Nama atribut, misalnya Warna" className={fieldClass} />
+                                                                    <input value={attribute.value} onChange={(event) => updateAttribute(variantIndex, attributeIndex, { value: event.target.value })} placeholder="Nilai, misalnya Hitam" className={fieldClass} />
+                                                                    <button type="button" onClick={() => removeAttribute(variantIndex, attributeIndex)} className="rounded-xl border p-3 text-rose-600">
+                                                                        <Trash2 size={18} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                            <button type="button" onClick={() => addAttribute(variantIndex)} className="inline-flex w-fit items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-bold">
+                                                                <Plus size={16} /> Tambah Atribut
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </article>
+                                        );
+                                    })}
+                                    <button type="button" onClick={addVariant} className="inline-flex w-fit items-center gap-2 rounded-xl border px-4 py-2.5 font-black">
+                                        <Plus size={18} /> Tambah Variant
+                                    </button>
+                                </div>
+                            )}
+                        </section>
+                    ) : null}
                 </div>
 
                 <datalist id="product-attribute-options">

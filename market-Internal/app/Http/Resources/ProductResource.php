@@ -13,68 +13,65 @@ class ProductResource extends JsonResource
         $variants = $this->relationLoaded('variants')
             ? $this->variants->values()
             : collect();
-
         $activeVariants = $variants
-            ->filter(
-                fn (ProductVariant $variant): bool => (bool) $variant->is_active
-            )
+            ->filter(fn (ProductVariant $variant): bool => (bool) $variant->is_active)
             ->values();
-
         $defaultVariant = $activeVariants->firstWhere('is_default', true)
             ?? $activeVariants->first();
-
         $prices = $activeVariants
             ->pluck('price')
             ->map(fn ($price): float => (float) $price);
-
-        $images = collect($this->imagePaths())
-            ->map(fn (string $path): array => [
-                'path' => $path,
-                'url' => $this->imageUrl($path),
-            ])
-            ->filter(fn (array $image): bool => filled($image['url']))
-            ->values();
-
+        $images = $this->relationLoaded('images')
+            ? $this->images->map(fn ($image): array => [
+                'id' => $image->id,
+                'path' => $this->normalizeImagePath($image->url),
+                'url' => $this->imageUrl($image->url),
+                'alt_text' => $image->alt_text,
+                'is_primary' => (bool) $image->is_primary,
+                'sort_order' => (int) $image->sort_order,
+            ])->filter(fn (array $image): bool => filled($image['url']))->values()
+            : collect();
         $firstImage = $images->first();
 
         return [
             'id' => $this->id,
-            'category_id' => $this->category_id,
-            'category' => $this->relationLoaded('category') && $this->category
-                ? new CategoryResource($this->category)
+            'category_id' => $this->primary_category_id,
+            'primary_category_id' => $this->primary_category_id,
+            'category' => $this->relationLoaded('primaryCategory') && $this->primaryCategory
+                ? new CategoryResource($this->primaryCategory)
                 : null,
+            'categories' => $this->relationLoaded('categories')
+                ? CategoryResource::collection($this->categories)
+                : [],
             'name' => $this->name,
             'slug' => $this->slug,
             'type' => $this->type,
             'description' => $this->description,
             'brand' => $this->brand,
+            'product_attributes' => $this->relationLoaded('attributeValues')
+                ? $this->attributeValues->map(fn ($value): array => [
+                    'id' => $value->id,
+                    'attribute_id' => $value->attribute_id,
+                    'name' => $value->relationLoaded('attribute') ? $value->attribute?->name : null,
+                    'slug' => $value->relationLoaded('attribute') ? $value->attribute?->slug : null,
+                    'type' => $value->relationLoaded('attribute') ? $value->attribute?->type : null,
+                    'value' => $value->value,
+                ])->values()->all()
+                : [],
             'images' => $images->all(),
-            'image_urls' => $images
-                ->pluck('url')
-                ->filter()
-                ->values()
-                ->all(),
-            'thumbnail' => $firstImage['url'] ?? null,
+            'image_urls' => $images->pluck('url')->filter()->values()->all(),
+            'thumbnail' => $firstImage['url'] ?? $this->imageUrl($this->thumbnail),
             'variants' => $variants
-                ->map(
-                    fn (ProductVariant $variant): array => $this->variantPayload($variant)
-                )
+                ->map(fn (ProductVariant $variant): array => $this->variantPayload($variant))
                 ->values()
                 ->all(),
             'default_variant' => $defaultVariant
                 ? $this->variantPayload($defaultVariant)
                 : null,
-            'has_multiple_variants' => $activeVariants->count() > 1
-                || $activeVariants->contains(
-                    fn (ProductVariant $variant): bool => count(
-                        is_array($variant->attributes)
-                            ? $variant->attributes
-                            : []
-                    ) > 0
-                ),
-            'price' => $defaultVariant
-                ? (float) $defaultVariant->price
-                : 0,
+            'default_variant_id' => $defaultVariant?->id,
+            'has_multiple_variants' => $activeVariants->count() > 1,
+            'requires_variant_selection' => $activeVariants->count() > 1,
+            'price' => $defaultVariant ? (float) $defaultVariant->price : 0,
             'price_min' => $prices->min() ?? 0,
             'price_max' => $prices->max() ?? 0,
             'available' => $activeVariants->contains(
@@ -92,21 +89,26 @@ class ProductResource extends JsonResource
 
     private function variantPayload(ProductVariant $variant): array
     {
+        $attributes = $variant->relationLoaded('values')
+            ? $variant->values->map(fn ($value): array => [
+                'id' => $value->id,
+                'attribute_id' => $value->attribute_id,
+                'name' => $value->relationLoaded('attribute') ? $value->attribute?->name : null,
+                'slug' => $value->relationLoaded('attribute') ? $value->attribute?->slug : null,
+                'value' => $value->value,
+            ])->values()->all()
+            : [];
+
         return [
             'id' => $variant->id,
             'product_id' => $variant->product_id,
             'sku' => $variant->sku,
             'name' => $variant->name,
             'price' => (float) $variant->price,
-            'attributes' => array_values(
-                is_array($variant->attributes)
-                    ? $variant->attributes
-                    : []
-            ),
+            'attributes' => $attributes,
+            'values' => $attributes,
             'track_stock' => (bool) $variant->track_stock,
-            'stock' => $variant->stock !== null
-                ? (int) $variant->stock
-                : null,
+            'stock' => $variant->stock !== null ? (int) $variant->stock : null,
             'is_default' => (bool) $variant->is_default,
             'is_active' => (bool) $variant->is_active,
             'available' => $this->variantAvailable($variant),
@@ -126,42 +128,6 @@ class ProductResource extends JsonResource
         return (int) ($variant->stock ?? 0) > 0;
     }
 
-    private function imagePaths(): array
-    {
-        $rawImages = $this->images;
-
-        if (is_string($rawImages)) {
-            $decoded = json_decode($rawImages, true);
-
-            $rawImages = is_array($decoded)
-                ? $decoded
-                : [];
-        }
-
-        if (! is_array($rawImages)) {
-            return [];
-        }
-
-        return collect($rawImages)
-            ->map(function ($image): ?string {
-                if (is_array($image)) {
-                    $image = $image['path']
-                        ?? $image['url']
-                        ?? null;
-                }
-
-                if (! is_string($image)) {
-                    return null;
-                }
-
-                return $this->normalizeImagePath($image);
-            })
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-    }
-
     private function normalizeImagePath(?string $path): ?string
     {
         if (! $path) {
@@ -174,20 +140,13 @@ class ProductResource extends JsonResource
             return null;
         }
 
-        if (
-            str_starts_with($path, 'http://')
-            || str_starts_with($path, 'https://')
-        ) {
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             return $path;
         }
 
         $path = ltrim($path, '/');
 
-        foreach ([
-            'storage/app/public/',
-            'public/storage/',
-            'storage/',
-        ] as $prefix) {
+        foreach (['storage/app/public/', 'public/storage/', 'storage/'] as $prefix) {
             if (str_starts_with($path, $prefix)) {
                 $path = substr($path, strlen($prefix));
                 break;
@@ -205,21 +164,14 @@ class ProductResource extends JsonResource
             return null;
         }
 
-        if (
-            str_starts_with($path, 'http://')
-            || str_starts_with($path, 'https://')
-        ) {
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             return $path;
         }
 
         $filename = basename($path);
 
-        if ($filename === '') {
-            return null;
-        }
-
-        return route('media.products', [
-            'filename' => $filename,
-        ]);
+        return $filename === ''
+            ? null
+            : route('media.products', ['filename' => $filename]);
     }
 }
