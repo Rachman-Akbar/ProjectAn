@@ -13,12 +13,9 @@ class OrderItem extends Model
     protected $fillable = [
         'order_id',
         'product_id',
-        'product_variant_id',
         'product_name',
         'product_sku',
         'product_type',
-        'variant_name',
-        'variant_attributes',
         'price',
         'quantity',
         'subtotal',
@@ -27,7 +24,6 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
-            'variant_attributes' => 'array',
             'price' => 'decimal:2',
             'quantity' => 'integer',
             'subtotal' => 'decimal:2',
@@ -42,10 +38,5 @@ class OrderItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
-    }
-
-    public function productVariant(): BelongsTo
-    {
-        return $this->belongsTo(ProductVariant::class);
     }
 }

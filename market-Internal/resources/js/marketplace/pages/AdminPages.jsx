@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Boxes, Eye, LayoutDashboard, LogOut, Menu, Package, Pencil, Plus, ReceiptText, RefreshCw, Trash2, Users, X, } from "lucide-react";
 import { Link, Navigate, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Empty, fieldClass, Loading, StatusBadge } from "@/components/Common";
 import { ProductForm } from "@/components/admin/ProductForm";
+import { OrderCreateForm } from "@/components/admin/OrderCreateForm";
 import { api, collectionData, errorMessage, paginatedData, resourceData } from "@/lib/api";
 import { currency, dateTime } from "@/lib/format";
 import { useAuthStore } from "@/stores/authStore";
@@ -108,7 +109,7 @@ export function AdminLayout() {
                     Kategori
                 </AdminNavLink>
                 <AdminNavLink to="/admin/products" icon={<Package />} onClick={close}>
-                    Produk & Variant
+                    Produk
                 </AdminNavLink>
                 <AdminNavLink to="/admin/orders" icon={<ReceiptText />} onClick={close}>
                     Order
@@ -190,7 +191,6 @@ export function AdminDashboardPage() {
 
     const cards = [
         ["Produk", query.data?.products],
-        ["Variant", query.data?.variants],
         ["Kategori", query.data?.categories],
         ["User", query.data?.users],
         ["Produk Terbit", query.data?.published_products],
@@ -460,7 +460,7 @@ export function AdminProductsPage() {
     };
     return (<div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-black">Produk & Variant</h1>
+        <h1 className="text-3xl font-black">Produk</h1>
         <button onClick={openCreate} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white">
           Tambah Produk
         </button>
@@ -470,7 +470,7 @@ export function AdminProductsPage() {
         <input value={search} onChange={(event) => {
             setSearch(event.target.value);
             setPage(1);
-        }} placeholder="Cari nama, kategori, brand, SKU, atau variant" className={`${fieldClass} w-full`}/>
+        }} placeholder="Cari nama, kategori, brand, atau SKU" className={`${fieldClass} w-full`}/>
       </div>
 
       {products.isLoading ? (<Loading />) : products.data?.data.length ? (<div className="mt-6 overflow-x-auto rounded-2xl border bg-white">
@@ -479,7 +479,7 @@ export function AdminProductsPage() {
               <tr className="bg-slate-50 text-left">
                 <th className="p-4">Produk</th>
                 <th>Kategori</th>
-                <th>Variant Default</th>
+                <th>SKU</th>
                 <th>Harga</th>
                 <th>Status</th>
                 <th />
@@ -500,12 +500,12 @@ export function AdminProductsPage() {
                   </td>
                   <td>{product.category?.name ?? "-"}</td>
                   <td>
-                    {product.default_variant?.name ?? "-"}
+                    {product.sku ?? "-"}
                     <small className="block text-slate-400">
-                      {product.default_variant?.sku ?? "-"} · {product.variants?.length ?? 0} variant
+                      {product.track_stock ? `Stok ${product.stock ?? 0}` : "Stok tidak dipantau"}
                     </small>
                   </td>
-                  <td>{currency.format(product.default_variant?.price ?? 0)}</td>
+                  <td>{currency.format(product.price ?? 0)}</td>
                   <td>
                     {product.status} · {product.is_active ? "aktif" : "nonaktif"}
                   </td>
@@ -713,75 +713,34 @@ export function AdminUsersPage() {
         </div>) : null}
     </div>);
 }
-const blankOrder = () => ({
-    customer_type: "individual",
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
-    nik: "",
-    npwp: "",
-    province: "",
-    city: "",
-    company_name: "",
-    postal_code: "",
-    country: "Indonesia",
-    notes: "",
-    payment_method: "internal_billing",
-    items: [{ product_variant_id: "", quantity: "1" }],
-});
 export function AdminOrdersPage() {
     const client = useQueryClient();
-    const [filters, setFilters] = useState({
-        search: "",
-        status: "",
-        date_from: "",
-        date_to: "",
-    });
+    const [filters, setFilters] = useState({ search: "", status: "", date_from: "", date_to: "" });
     const [page, setPage] = useState(1);
     const [selected, setSelected] = useState(null);
     const [detailError, setDetailError] = useState("");
     const [createOpen, setCreateOpen] = useState(false);
-    const [createForm, setCreateForm] = useState(blankOrder());
-    const [createError, setCreateError] = useState("");
-    const [creating, setCreating] = useState(false);
     const query = useQuery({
         queryKey: ["admin-orders", filters, page],
-        queryFn: async () => paginatedData(await api.get("/admin/orders", {
-            params: { ...filters, page, per_page: 20 },
-        })),
+        queryFn: async () => paginatedData(await api.get("/admin/orders", { params: { ...filters, page, per_page: 20 } })),
     });
-    const productQuery = useQuery({
-        queryKey: ["admin-products-for-order"],
-        enabled: createOpen,
-        queryFn: async () => paginatedData(await api.get("/admin/products", {
-            params: { per_page: 100, status: "published" },
-        })).data,
-    });
-    const variantOptions = useMemo(
-        () => (productQuery.data ?? []).flatMap((product) =>
-            (Array.isArray(product.variants) ? product.variants : [])
-                .filter((variant) => variant.is_active && variant.available)
-                .map((variant) => ({ product, variant }))
-        ),
-        [productQuery.data]
-    );
+
     const openDetail = async (order) => {
         setDetailError("");
         try {
             setSelected(resourceData(await api.get(`/admin/orders/${order.id}`)));
-        }
-        catch (exception) {
+        } catch (exception) {
             alert(errorMessage(exception, "Detail order gagal dimuat."));
         }
     };
-    const updateSelected = (patch) => {
-        setSelected((current) => (current ? { ...current, ...patch } : current));
-    };
+
+    const updateSelected = (patch) => setSelected((current) => current ? { ...current, ...patch } : current);
+
     const saveSelected = async () => {
         if (!selected) {
             return;
         }
+
         setDetailError("");
         try {
             const result = resourceData(await api.put(`/admin/orders/${selected.id}`, {
@@ -806,357 +765,124 @@ export function AdminOrdersPage() {
             }));
             setSelected(result);
             await client.invalidateQueries({ queryKey: ["admin-orders"] });
-        }
-        catch (exception) {
+            await client.invalidateQueries({ queryKey: ["admin-dashboard"] });
+        } catch (exception) {
             setDetailError(errorMessage(exception));
         }
     };
-    const addCreateItem = () => {
-        setCreateForm((current) => ({
-            ...current,
-            items: [...current.items, { product_variant_id: "", quantity: "1" }],
-        }));
-    };
-    const updateCreateItem = (index, patch) => {
-        setCreateForm((current) => ({
-            ...current,
-            items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
-        }));
-    };
-    const removeCreateItem = (index) => {
-        setCreateForm((current) => ({
-            ...current,
-            items: current.items.length === 1
-                ? current.items
-                : current.items.filter((_, itemIndex) => itemIndex !== index),
-        }));
-    };
-    const createOrder = async (event) => {
-        event.preventDefault();
-        setCreateError("");
-        const selectedIds = createForm.items.map((item) => item.product_variant_id);
-        if (selectedIds.some((id) => !id)) {
-            setCreateError("Semua item harus memilih variant.");
+
+    const remove = async (order) => {
+        if (!confirm(`Hapus order ${order.order_number}?`)) {
             return;
         }
-        if (new Set(selectedIds).size !== selectedIds.length) {
-            setCreateError("Variant yang sama tidak boleh ditambahkan dua kali.");
-            return;
-        }
-        const items = createForm.items.map((item) => {
-            const option = variantOptions.find(({ variant }) => variant.id === Number(item.product_variant_id));
-            return {
-                product_id: option?.product.id ?? 0,
-                product_variant_id: Number(item.product_variant_id),
-                quantity: Number(item.quantity),
-            };
-        });
-        if (items.some((item) => item.product_id < 1 || !Number.isInteger(item.quantity) || item.quantity < 1)) {
-            setCreateError("Item order tidak valid.");
-            return;
-        }
-        setCreating(true);
-        try {
-            const order = resourceData(await api.post("/admin/orders", {
-                customer_type: createForm.customer_type,
-                name: createForm.name,
-                email: createForm.email,
-                phone: createForm.phone,
-                address: createForm.address,
-                nik: createForm.customer_type === "business" ? createForm.nik : null,
-                npwp: createForm.customer_type === "business" ? createForm.npwp : null,
-                province: createForm.customer_type === "business" ? createForm.province : null,
-                city: createForm.customer_type === "business" ? createForm.city : null,
-                company_name: createForm.customer_type === "business" ? createForm.company_name : null,
-                postal_code: createForm.customer_type === "business" ? createForm.postal_code : null,
-                country: createForm.customer_type === "business" ? createForm.country : null,
-                notes: createForm.notes || null,
-                payment_method: createForm.payment_method,
-                items,
-            }));
-            setCreateOpen(false);
-            setCreateForm(blankOrder());
-            await client.invalidateQueries({ queryKey: ["admin-orders"] });
-            setSelected(order);
-        }
-        catch (exception) {
-            setCreateError(errorMessage(exception, "Order gagal dibuat."));
-        }
-        finally {
-            setCreating(false);
-        }
-    };
-    const removeOrder = async (order) => {
-        if (!confirm("Hapus order? Order aktif akan dibatalkan dan stok dikembalikan.")) {
-            return;
-        }
+
         try {
             await api.delete(`/admin/orders/${order.id}`);
             await client.invalidateQueries({ queryKey: ["admin-orders"] });
-        }
-        catch (exception) {
+            await client.invalidateQueries({ queryKey: ["admin-dashboard"] });
+            if (selected?.id === order.id) {
+                setSelected(null);
+            }
+        } catch (exception) {
             alert(errorMessage(exception, "Order gagal dihapus."));
         }
     };
-    return (<div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-black">Order Management</h1>
-        <div className="flex gap-2">
-          <button onClick={() => void query.refetch()} className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold">
-            <RefreshCw size={18}/> Refresh
-          </button>
-          <button onClick={() => {
-            setCreateForm(blankOrder());
-            setCreateError("");
-            setCreateOpen(true);
-        }} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-black text-white">
-            <Plus size={18}/> Tambah Order
-          </button>
+
+    return (
+        <div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-3xl font-black">Order</h1>
+                <div className="flex gap-2">
+                    <button type="button" onClick={() => void query.refetch()} className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold"><RefreshCw size={18} /> Refresh</button>
+                    <button type="button" onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-black text-white"><Plus size={18} /> Tambah Order</button>
+                </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-2xl border bg-white p-4 md:grid-cols-4">
+                <input value={filters.search} onChange={(event) => { setFilters((current) => ({ ...current, search: event.target.value })); setPage(1); }} placeholder="Nomor order, email, nama, perusahaan" className={fieldClass} />
+                <select value={filters.status} onChange={(event) => { setFilters((current) => ({ ...current, status: event.target.value })); setPage(1); }} className={fieldClass}>
+                    <option value="">Semua status</option>
+                    {['pending', 'confirmed', 'processing', 'completed', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+                <input type="date" value={filters.date_from} onChange={(event) => { setFilters((current) => ({ ...current, date_from: event.target.value })); setPage(1); }} className={fieldClass} />
+                <input type="date" value={filters.date_to} onChange={(event) => { setFilters((current) => ({ ...current, date_to: event.target.value })); setPage(1); }} className={fieldClass} />
+            </div>
+
+            {query.isLoading ? <Loading /> : query.data?.data.length ? (
+                <div className="mt-6 overflow-x-auto rounded-2xl border bg-white">
+                    <table className="w-full min-w-[960px]">
+                        <thead><tr className="bg-slate-50 text-left"><th className="p-4">Order</th><th>Buyer</th><th>Total</th><th>Status</th><th>Pembayaran</th><th>Tanggal</th><th /></tr></thead>
+                        <tbody>
+                            {query.data.data.map((order) => (
+                                <tr key={order.id} className="border-t">
+                                    <td className="p-4 font-black">{order.order_number}</td>
+                                    <td><b>{order.guest_name}</b><small className="block text-slate-500">{order.guest_email}</small>{order.guest_company_name ? <small className="block text-slate-500">{order.guest_company_name}</small> : null}</td>
+                                    <td className="font-black text-emerald-700">{currency.format(order.total_amount)}</td>
+                                    <td><StatusBadge status={order.status} /></td>
+                                    <td>{order.payment_status} · {order.payment_method}</td>
+                                    <td>{dateTime(order.created_at)}</td>
+                                    <td className="text-right"><button type="button" onClick={() => void openDetail(order)} className="p-2"><Eye /></button><button type="button" onClick={() => void remove(order)} className="p-2 text-rose-600"><Trash2 /></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : <div className="mt-6"><Empty title="Order tidak ditemukan" /></div>}
+
+            <Pagination meta={query.data?.meta} onPage={setPage} />
+
+            {createOpen ? <OrderCreateForm onClose={() => setCreateOpen(false)} onSaved={async () => { await client.invalidateQueries({ queryKey: ["admin-orders"] }); await client.invalidateQueries({ queryKey: ["admin-dashboard"] }); }} /> : null}
+
+            {selected ? (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
+                    <div className="mx-auto my-4 w-full max-w-4xl rounded-2xl bg-white p-6">
+                        <div className="flex justify-between gap-3">
+                            <div><p className="text-sm text-slate-500">{selected.order_number}</p><h2 className="text-2xl font-black">Detail Order</h2></div>
+                            <button type="button" onClick={() => setSelected(null)}><X /></button>
+                        </div>
+
+                        {detailError ? <p className="mt-3 rounded-xl bg-rose-50 p-3 text-rose-700">{detailError}</p> : null}
+
+                        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                            <section className="grid gap-3">
+                                <select value={selected.customer_type ?? "individual"} onChange={(event) => updateSelected({ customer_type: event.target.value })} className={fieldClass}><option value="individual">Perorangan</option><option value="business">Badan Usaha</option></select>
+                                {selected.customer_type === "business" ? <>
+                                    <input required placeholder="Perusahaan" value={selected.guest_company_name ?? ""} onChange={(event) => updateSelected({ guest_company_name: event.target.value })} className={fieldClass} />
+                                    <input required inputMode="numeric" maxLength={16} pattern="[0-9]{16}" placeholder="NIK" value={selected.guest_nik ?? ""} onChange={(event) => updateSelected({ guest_nik: event.target.value })} className={fieldClass} />
+                                    <input required placeholder="NPWP" value={selected.guest_npwp ?? ""} onChange={(event) => updateSelected({ guest_npwp: event.target.value })} className={fieldClass} />
+                                    <input required placeholder="Negara" value={selected.guest_country ?? ""} onChange={(event) => updateSelected({ guest_country: event.target.value })} className={fieldClass} />
+                                    <input required placeholder="Provinsi" value={selected.guest_province ?? ""} onChange={(event) => updateSelected({ guest_province: event.target.value })} className={fieldClass} />
+                                    <input required placeholder="Kota" value={selected.guest_city ?? ""} onChange={(event) => updateSelected({ guest_city: event.target.value })} className={fieldClass} />
+                                    <input required placeholder="Kode Pos" value={selected.guest_postal_code ?? ""} onChange={(event) => updateSelected({ guest_postal_code: event.target.value })} className={fieldClass} />
+                                </> : null}
+                                <input type="email" value={selected.guest_email} onChange={(event) => updateSelected({ guest_email: event.target.value })} className={fieldClass} />
+                                <input value={selected.guest_name} onChange={(event) => updateSelected({ guest_name: event.target.value })} className={fieldClass} />
+                                <input value={selected.guest_phone} onChange={(event) => updateSelected({ guest_phone: event.target.value })} className={fieldClass} />
+                                <textarea rows={3} value={selected.guest_address} onChange={(event) => updateSelected({ guest_address: event.target.value })} className={fieldClass} />
+                                <textarea rows={3} value={selected.guest_notes ?? ""} onChange={(event) => updateSelected({ guest_notes: event.target.value })} placeholder="Catatan buyer" className={fieldClass} />
+                                <textarea rows={3} value={selected.admin_notes ?? ""} onChange={(event) => updateSelected({ admin_notes: event.target.value })} placeholder="Catatan internal admin" className={fieldClass} />
+                                <select value={selected.status} onChange={(event) => updateSelected({ status: event.target.value })} className={fieldClass}>{['pending', 'confirmed', 'processing', 'completed', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}</select>
+                                <select value={selected.payment_status} onChange={(event) => updateSelected({ payment_status: event.target.value })} className={fieldClass}><option value="unpaid">Unpaid</option><option value="paid">Paid</option></select>
+                                <select value={selected.payment_method} onChange={(event) => updateSelected({ payment_method: event.target.value })} className={fieldClass}><option value="internal_billing">Internal Billing</option><option value="bank_transfer">Transfer Manual</option><option value="cod">COD</option></select>
+                                {selected.status === "cancelled" ? <textarea rows={2} value={selected.cancel_reason ?? ""} onChange={(event) => updateSelected({ cancel_reason: event.target.value })} placeholder="Alasan pembatalan" className={fieldClass} /> : null}
+                                <button type="button" onClick={() => void saveSelected()} className="rounded-xl bg-emerald-600 py-3 font-black text-white">Simpan Perubahan</button>
+                            </section>
+
+                            <section>
+                                <h3 className="font-black">Item Order</h3>
+                                <div className="mt-3 space-y-3">
+                                    {(selected.items ?? []).map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex justify-between gap-3"><b>{item.product_name} × {item.quantity}</b><b>{currency.format(item.subtotal)}</b></div>{item.product_sku ? <p className="mt-1 text-sm text-slate-500">{item.product_sku}</p> : null}</div>)}
+                                </div>
+                                <div className="mt-5 flex justify-between text-lg"><b>Total</b><b className="text-emerald-700">{currency.format(selected.total_amount)}</b></div>
+                                <h3 className="mt-6 font-black">Riwayat Status</h3>
+                                <div className="mt-3 space-y-3">
+                                    {selected.status_histories?.map((history) => <div key={history.id} className="border-l-4 border-emerald-500 pl-3 text-sm"><b>{history.from_status ?? "baru"} → {history.to_status}</b><p className="text-slate-500">{history.notes ?? "-"} · {history.changed_by?.name ?? "Guest/System"} · {dateTime(history.created_at)}</p></div>)}
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 rounded-2xl border bg-white p-4 md:grid-cols-4">
-        <input placeholder="Nomor order / buyer" value={filters.search} onChange={(event) => {
-            setFilters({ ...filters, search: event.target.value });
-            setPage(1);
-        }} className={fieldClass}/>
-        <select value={filters.status} onChange={(event) => {
-            setFilters({ ...filters, status: event.target.value });
-            setPage(1);
-        }} className={fieldClass}>
-          <option value="">Semua status</option>
-          {["pending", "confirmed", "processing", "completed", "cancelled"].map((status) => (<option key={status} value={status}>
-                {status}
-              </option>))}
-        </select>
-        <input type="date" value={filters.date_from} onChange={(event) => {
-            setFilters({ ...filters, date_from: event.target.value });
-            setPage(1);
-        }} className={fieldClass}/>
-        <input type="date" value={filters.date_to} onChange={(event) => {
-            setFilters({ ...filters, date_to: event.target.value });
-            setPage(1);
-        }} className={fieldClass}/>
-      </div>
-
-      {query.isLoading ? (<Loading />) : query.data?.data.length ? (<div className="mt-6 overflow-x-auto rounded-2xl border bg-white">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="bg-slate-50 text-left">
-                <th className="p-4">Nomor</th>
-                <th>Buyer</th>
-                <th>Tanggal</th>
-                <th>Status</th>
-                <th>Total</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {query.data.data.map((order) => (<tr key={order.id} className="border-t">
-                  <td className="p-4 font-bold">{order.order_number}</td>
-                  <td>
-                    {order.guest_name}
-                    <small className="block text-slate-400">{order.guest_email}</small>
-                  </td>
-                  <td>{dateTime(order.created_at)}</td>
-                  <td>
-                    <StatusBadge status={order.status}/>
-                  </td>
-                  <td>{currency.format(order.total_amount)}</td>
-                  <td className="text-right">
-                    <button onClick={() => void openDetail(order)} className="p-2">
-                      <Eye />
-                    </button>
-                    <button onClick={() => void removeOrder(order)} className="p-2 text-rose-600">
-                      <Trash2 />
-                    </button>
-                  </td>
-                </tr>))}
-            </tbody>
-          </table>
-        </div>) : (<div className="mt-6">
-          <Empty title="Order tidak ditemukan"/>
-        </div>)}
-
-      <Pagination meta={query.data?.meta} onPage={setPage}/>
-
-      {createOpen ? (<div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
-          <form onSubmit={createOrder} className="mx-auto my-4 w-full max-w-4xl rounded-2xl bg-white p-6">
-            <div className="flex justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-black">Tambah Order</h2>
-                <p className="text-sm text-slate-500">Order dibuat menggunakan harga dan stok database.</p>
-              </div>
-              <button type="button" onClick={() => setCreateOpen(false)}>
-                <X />
-              </button>
-            </div>
-
-            {createError ? (<p className="mt-4 rounded-xl bg-rose-50 p-3 text-rose-700">{createError}</p>) : null}
-
-            <div className="mt-5 grid gap-4">
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-                <button type="button" onClick={() => setCreateForm({ ...createForm, customer_type: "individual" })} className={`rounded-lg px-4 py-3 text-sm font-black ${createForm.customer_type === "individual" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}>Perorangan</button>
-                <button type="button" onClick={() => setCreateForm({ ...createForm, customer_type: "business" })} className={`rounded-lg px-4 py-3 text-sm font-black ${createForm.customer_type === "business" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"}`}>Badan Usaha</button>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {createForm.customer_type === "business" ? <>
-                  <input required placeholder="Perusahaan" value={createForm.company_name} onChange={(event) => setCreateForm({ ...createForm, company_name: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
-                  <input required placeholder="Nama penanggung jawab" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} className={fieldClass}/>
-                  <input required inputMode="numeric" maxLength={16} pattern="[0-9]{16}" placeholder="NIK 16 digit" value={createForm.nik} onChange={(event) => setCreateForm({ ...createForm, nik: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="NPWP" value={createForm.npwp} onChange={(event) => setCreateForm({ ...createForm, npwp: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Negara" value={createForm.country} onChange={(event) => setCreateForm({ ...createForm, country: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Provinsi" value={createForm.province} onChange={(event) => setCreateForm({ ...createForm, province: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Kota" value={createForm.city} onChange={(event) => setCreateForm({ ...createForm, city: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Kode Pos" value={createForm.postal_code} onChange={(event) => setCreateForm({ ...createForm, postal_code: event.target.value })} className={fieldClass}/>
-                </> : <input required placeholder="Nama buyer" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} className={`${fieldClass} md:col-span-2`}/>} 
-                <input required type="email" placeholder="Email buyer" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} className={fieldClass}/>
-                <input required placeholder="No. HP" value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} className={fieldClass}/>
-                <select value={createForm.payment_method} onChange={(event) => setCreateForm({ ...createForm, payment_method: event.target.value })} className={`${fieldClass} md:col-span-2`}>
-                  <option value="internal_billing">Internal Billing</option>
-                  <option value="bank_transfer">Transfer Manual</option>
-                  <option value="cod">COD</option>
-                </select>
-                <textarea required rows={3} placeholder="Alamat" value={createForm.address} onChange={(event) => setCreateForm({ ...createForm, address: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
-                <textarea rows={2} placeholder="Catatan buyer" value={createForm.notes} onChange={(event) => setCreateForm({ ...createForm, notes: event.target.value })} className={`${fieldClass} md:col-span-2`}/>
-              </div>
-            </div>
-
-            <section className="mt-6 rounded-2xl border bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-black">Item Order</h3>
-                <button type="button" onClick={addCreateItem} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 font-bold">
-                  <Plus size={16}/> Tambah Item
-                </button>
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                {createForm.items.map((item, index) => (<div key={index} className="grid gap-3 md:grid-cols-[1fr_140px_auto]">
-                    <select required value={item.product_variant_id} onChange={(event) => updateCreateItem(index, { product_variant_id: event.target.value })} className={fieldClass}>
-                      <option value="">Pilih produk / variant</option>
-                      {variantOptions.map(({ product, variant }) => (<option key={variant.id} value={variant.id}>
-                          {product.name} — {variant.name} — {currency.format(variant.price)}
-                        </option>))}
-                    </select>
-                    <input required type="number" min="1" step="1" value={item.quantity} onChange={(event) => updateCreateItem(index, { quantity: event.target.value })} className={fieldClass}/>
-                    <button type="button" disabled={createForm.items.length === 1} onClick={() => removeCreateItem(index)} className="rounded-xl border p-3 text-rose-600 disabled:opacity-30">
-                      <Trash2 />
-                    </button>
-                  </div>))}
-              </div>
-            </section>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setCreateOpen(false)} className="rounded-xl border px-5 py-3 font-bold">
-                Batal
-              </button>
-              <button disabled={creating} className="rounded-xl bg-emerald-600 px-6 py-3 font-black text-white disabled:bg-slate-300">
-                {creating ? "Membuat..." : "Buat Order"}
-              </button>
-            </div>
-          </form>
-        </div>) : null}
-
-      {selected ? (<div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
-          <div className="mx-auto my-4 w-full max-w-4xl rounded-2xl bg-white p-6">
-            <div className="flex justify-between gap-3">
-              <div>
-                <p className="text-sm text-slate-500">{selected.order_number}</p>
-                <h2 className="text-2xl font-black">Detail Order</h2>
-              </div>
-              <button onClick={() => setSelected(null)}>
-                <X />
-              </button>
-            </div>
-
-            {detailError ? (<p className="mt-3 rounded-xl bg-rose-50 p-3 text-rose-700">{detailError}</p>) : null}
-
-            <div className="mt-5 grid gap-5 lg:grid-cols-2">
-              <section className="grid gap-3">
-                <select value={selected.customer_type ?? "individual"} onChange={(event) => updateSelected({ customer_type: event.target.value })} className={fieldClass}>
-                  <option value="individual">Perorangan</option>
-                  <option value="business">Badan Usaha</option>
-                </select>
-                {selected.customer_type === "business" ? <>
-                  <input required placeholder="Perusahaan" value={selected.guest_company_name ?? ""} onChange={(event) => updateSelected({ guest_company_name: event.target.value })} className={fieldClass}/>
-                  <input required inputMode="numeric" maxLength={16} pattern="[0-9]{16}" placeholder="NIK" value={selected.guest_nik ?? ""} onChange={(event) => updateSelected({ guest_nik: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="NPWP" value={selected.guest_npwp ?? ""} onChange={(event) => updateSelected({ guest_npwp: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Negara" value={selected.guest_country ?? ""} onChange={(event) => updateSelected({ guest_country: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Provinsi" value={selected.guest_province ?? ""} onChange={(event) => updateSelected({ guest_province: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Kota" value={selected.guest_city ?? ""} onChange={(event) => updateSelected({ guest_city: event.target.value })} className={fieldClass}/>
-                  <input required placeholder="Kode Pos" value={selected.guest_postal_code ?? ""} onChange={(event) => updateSelected({ guest_postal_code: event.target.value })} className={fieldClass}/>
-                </> : null}
-                <input type="email" value={selected.guest_email} onChange={(event) => updateSelected({ guest_email: event.target.value })} className={fieldClass}/>
-                <input value={selected.guest_name} onChange={(event) => updateSelected({ guest_name: event.target.value })} className={fieldClass}/>
-                <input value={selected.guest_phone} onChange={(event) => updateSelected({ guest_phone: event.target.value })} className={fieldClass}/>
-                <textarea rows={3} value={selected.guest_address} onChange={(event) => updateSelected({ guest_address: event.target.value })} className={fieldClass}/>
-                <textarea rows={3} value={selected.guest_notes ?? ""} onChange={(event) => updateSelected({ guest_notes: event.target.value })} placeholder="Catatan buyer" className={fieldClass}/>
-                <textarea rows={3} value={selected.admin_notes ?? ""} onChange={(event) => updateSelected({ admin_notes: event.target.value })} placeholder="Catatan internal admin" className={fieldClass}/>
-                <select value={selected.status} onChange={(event) => updateSelected({ status: event.target.value })} className={fieldClass}>
-                  {["pending", "confirmed", "processing", "completed", "cancelled"].map((status) => (<option key={status} value={status}>
-                        {status}
-                      </option>))}
-                </select>
-                <select value={selected.payment_status} onChange={(event) => updateSelected({
-                payment_status: event.target.value,
-            })} className={fieldClass}>
-                  <option value="unpaid">Unpaid</option>
-                  <option value="paid">Paid</option>
-                </select>
-                <select value={selected.payment_method} onChange={(event) => updateSelected({
-                payment_method: event.target.value,
-            })} className={fieldClass}>
-                  <option value="internal_billing">Internal Billing</option>
-                  <option value="bank_transfer">Transfer Manual</option>
-                  <option value="cod">COD</option>
-                </select>
-                {selected.status === "cancelled" ? (<textarea rows={2} value={selected.cancel_reason ?? ""} onChange={(event) => updateSelected({ cancel_reason: event.target.value })} placeholder="Alasan pembatalan" className={fieldClass}/>) : null}
-                <button onClick={() => void saveSelected()} className="rounded-xl bg-emerald-600 py-3 font-black text-white">
-                  Simpan Perubahan
-                </button>
-              </section>
-
-              <section>
-                <h3 className="font-black">Item Order</h3>
-                <div className="mt-3 space-y-3">
-                  {(selected.items ?? []).map((item) => (<div key={item.id} className="rounded-xl border p-4">
-                      <div className="flex justify-between gap-3">
-                        <b>
-                          {item.product_name} × {item.quantity}
-                        </b>
-                        <b>{currency.format(item.subtotal)}</b>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {item.variant_name} · {item.product_sku}
-                      </p>
-                      {(item.variant_attributes?.length ?? 0) ? (<p className="mt-1 text-xs text-slate-500">
-                          {item.variant_attributes
-                        .map((attribute) => `${attribute.name}: ${attribute.value}`)
-                        .join(" · ")}
-                        </p>) : null}
-                    </div>))}
-                </div>
-
-                <div className="mt-5 flex justify-between text-lg">
-                  <b>Total</b>
-                  <b className="text-emerald-700">{currency.format(selected.total_amount)}</b>
-                </div>
-
-                <h3 className="mt-6 font-black">Riwayat Status</h3>
-                <div className="mt-3 space-y-3">
-                  {selected.status_histories?.map((history) => (<div key={history.id} className="border-l-4 border-emerald-500 pl-3 text-sm">
-                      <b>
-                        {history.from_status ?? "baru"} → {history.to_status}
-                      </b>
-                      <p className="text-slate-500">
-                        {history.notes ?? "-"} · {history.changed_by?.name ?? "Guest/System"} ·{" "}
-                        {dateTime(history.created_at)}
-                      </p>
-                    </div>))}
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>) : null}
-    </div>);
+    );
 }

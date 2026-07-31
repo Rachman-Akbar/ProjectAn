@@ -16,24 +16,27 @@ class Product extends Model
         'primary_category_id',
         'name',
         'slug',
+        'sku',
         'type',
         'description',
         'brand',
         'thumbnail',
+        'price',
+        'track_stock',
+        'stock',
         'status',
         'is_featured',
         'is_active',
-        'rating',
-        'review_count',
     ];
 
     protected function casts(): array
     {
         return [
+            'price' => 'decimal:2',
+            'track_stock' => 'boolean',
+            'stock' => 'integer',
             'is_featured' => 'boolean',
             'is_active' => 'boolean',
-            'rating' => 'decimal:1',
-            'review_count' => 'integer',
         ];
     }
 
@@ -53,15 +56,6 @@ class Product extends Model
             ->withPivot('is_primary');
     }
 
-    public function attributeValues(): HasMany
-    {
-        return $this->hasMany(ProductAttributeValue::class);
-    }
-
-    public function variants(): HasMany
-    {
-        return $this->hasMany(ProductVariant::class);
-    }
 
     public function images(): HasMany
     {
@@ -74,5 +68,14 @@ class Product extends Model
     public function orderItems(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function isAvailable(): bool
+    {
+        if (! $this->is_active || $this->status !== 'published') {
+            return false;
+        }
+
+        return ! $this->track_stock || (int) ($this->stock ?? 0) > 0;
     }
 }

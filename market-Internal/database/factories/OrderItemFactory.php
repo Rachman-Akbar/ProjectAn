@@ -15,12 +15,9 @@ class OrderItemFactory extends Factory
         return [
             'order_id' => Order::factory(),
             'product_id' => null,
-            'product_variant_id' => null,
             'product_name' => fake()->words(3, true),
             'product_sku' => 'SKU-'.fake()->unique()->numerify('########'),
             'product_type' => 'product',
-            'variant_name' => 'Default',
-            'variant_attributes' => [],
             'price' => $price,
             'quantity' => $quantity,
             'subtotal' => round($price * $quantity, 2),

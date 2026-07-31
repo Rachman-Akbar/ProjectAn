@@ -13,17 +13,20 @@ return new class extends Migration
             $table->foreignId('primary_category_id')->nullable()->constrained('categories')->nullOnDelete();
             $table->string('name')->unique();
             $table->string('slug')->unique();
+            $table->string('sku', 100)->nullable()->unique();
             $table->enum('type', ['product', 'service'])->default('product')->index();
             $table->longText('description')->nullable();
             $table->string('brand', 100)->nullable();
             $table->string('thumbnail')->nullable();
+            $table->decimal('price', 15, 2)->default(0);
+            $table->boolean('track_stock')->default(true)->index();
+            $table->unsignedInteger('stock')->nullable();
             $table->enum('status', ['draft', 'published', 'archived'])->default('published')->index();
             $table->boolean('is_featured')->default(false)->index();
             $table->boolean('is_active')->default(true)->index();
-            $table->decimal('rating', 3, 1)->default(0);
-            $table->unsignedInteger('review_count')->default(0);
             $table->timestamps();
             $table->index(['primary_category_id', 'status', 'is_active'], 'products_catalog_idx');
+            $table->index(['price', 'is_active'], 'products_price_active_idx');
         });
     }
 

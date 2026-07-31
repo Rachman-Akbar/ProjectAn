@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        foreach (['orders', 'product_variants', 'products'] as $tableName) {
+        foreach (['orders', 'products'] as $tableName) {
             if (Schema::hasTable($tableName) && Schema::hasColumn($tableName, 'store_id')) {
                 Schema::table($tableName, function (Blueprint $table): void {
                     $table->dropConstrainedForeignId('store_id');

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
-use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +23,6 @@ class AdminDashboardController extends Controller
             'data' => [
                 'categories' => Category::query()->count(),
                 'products' => Product::query()->count(),
-                'variants' => ProductVariant::query()->count(),
                 'users' => $request->user()?->role === 'admin' ? User::query()->count() : null,
                 'published_products' => Product::query()
                     ->where('status', 'published')

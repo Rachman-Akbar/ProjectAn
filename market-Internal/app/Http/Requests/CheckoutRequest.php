@@ -25,13 +25,8 @@ class CheckoutRequest extends FormRequest
             $items = collect($items)
                 ->filter(fn ($item): bool => is_array($item))
                 ->map(function (array $item): array {
-                    $variantId = $item['product_variant_id'] ?? $item['variant_id'] ?? null;
-                    $variantSku = $item['variant_sku'] ?? $item['sku'] ?? null;
-
                     return [
                         'product_id' => $item['product_id'] ?? $item['id'] ?? null,
-                        'product_variant_id' => filled($variantId) ? $variantId : null,
-                        'variant_sku' => filled($variantSku) ? trim((string) $variantSku) : null,
                         'quantity' => $item['quantity'] ?? $item['qty'] ?? 1,
                     ];
                 })
@@ -85,8 +80,6 @@ class CheckoutRequest extends FormRequest
             'payment_method' => ['sometimes', Rule::in(['cod', 'bank_transfer', 'internal_billing'])],
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'items.*.product_variant_id' => ['nullable', 'integer'],
-            'items.*.variant_sku' => ['nullable', 'string', 'max:100'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
         ];
     }

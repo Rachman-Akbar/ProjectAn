@@ -4,8 +4,7 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Order;
-use App\Models\ProductVariant;
-use Illuminate\Support\Collection;
+use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -21,75 +20,54 @@ class CheckoutService
         $requestedItems = collect($payload['items'])
             ->map(fn (array $item): array => [
                 'product_id' => (int) $item['product_id'],
-                'product_variant_id' => filled($item['product_variant_id'] ?? null)
-                    ? (int) $item['product_variant_id']
-                    : null,
-                'variant_sku' => filled($item['variant_sku'] ?? null)
-                    ? trim((string) $item['variant_sku'])
-                    : null,
                 'quantity' => (int) $item['quantity'],
             ])
-            ->values();
-
-        $variantsByProduct = ProductVariant::query()
-            ->with(['values.attribute', 'product'])
-            ->whereIn('product_id', $requestedItems->pluck('product_id')->unique())
-            ->lockForUpdate()
-            ->get()
-            ->groupBy('product_id');
-
-        $items = $this->resolveItems($requestedItems, $variantsByProduct)
-            ->groupBy('product_variant_id')
-            ->map(fn (Collection $rows): array => [
+            ->groupBy('product_id')
+            ->map(fn ($rows): array => [
                 'product_id' => (int) $rows->first()['product_id'],
-                'product_variant_id' => (int) $rows->first()['product_variant_id'],
                 'quantity' => (int) $rows->sum('quantity'),
             ])
             ->values();
 
-        $variants = $variantsByProduct->flatten(1)->keyBy('id');
+        $products = Product::query()
+            ->whereIn('id', $requestedItems->pluck('product_id'))
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
         $orderItems = [];
         $subtotal = 0.0;
 
-        foreach ($items as $item) {
-            $variant = $variants->get($item['product_variant_id']);
-            $product = $variant?->product;
+        foreach ($requestedItems as $index => $item) {
+            $product = $products->get($item['product_id']);
 
-            if (! $variant || ! $product || (int) $variant->product_id !== (int) $item['product_id']) {
-                throw ValidationException::withMessages(['items' => 'Produk dan variant tidak cocok.']);
-            }
-
-            if (! $variant->is_active || ! $product->is_active || $product->status !== 'published') {
-                throw ValidationException::withMessages(['items' => "{$product->name} sudah tidak tersedia."]);
-            }
-
-            if ($variant->track_stock && (int) ($variant->stock ?? 0) < $item['quantity']) {
+            if (! $product) {
                 throw ValidationException::withMessages([
-                    'items' => "Stok {$product->name} - {$variant->name} tidak mencukupi.",
+                    "items.{$index}.product_id" => 'Produk tidak ditemukan.',
                 ]);
             }
 
-            $line = round((float) $variant->price * $item['quantity'], 2);
+            if (! $product->is_active || $product->status !== 'published') {
+                throw ValidationException::withMessages([
+                    "items.{$index}.product_id" => "{$product->name} sudah tidak tersedia.",
+                ]);
+            }
+
+            if ($product->track_stock && (int) ($product->stock ?? 0) < $item['quantity']) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.quantity" => "Stok {$product->name} tidak mencukupi.",
+                ]);
+            }
+
+            $line = round((float) $product->price * $item['quantity'], 2);
             $subtotal = round($subtotal + $line, 2);
-            $variantAttributes = $variant->values
-                ->map(fn ($value): array => [
-                    'attribute_id' => $value->attribute_id,
-                    'name' => $value->attribute?->name,
-                    'slug' => $value->attribute?->slug,
-                    'value' => $value->value,
-                ])
-                ->values()
-                ->all();
 
             $orderItems[] = [
                 'product_id' => $product->id,
-                'product_variant_id' => $variant->id,
                 'product_name' => $product->name,
-                'product_sku' => $variant->sku,
+                'product_sku' => $product->sku,
                 'product_type' => $product->type,
-                'variant_name' => $variant->name,
-                'variant_attributes' => $variantAttributes,
-                'price' => (float) $variant->price,
+                'price' => (float) $product->price,
                 'quantity' => $item['quantity'],
                 'subtotal' => $line,
             ];
@@ -128,10 +106,7 @@ class CheckoutService
             ];
         }
 
-        $customer = Customer::query()->updateOrCreate(
-            ['email' => $email],
-            $customerData
-        );
+        $customer = Customer::query()->updateOrCreate(['email' => $email], $customerData);
 
         $order = Order::query()->create([
             'order_number' => $this->nextOrderNumber(),
@@ -164,56 +139,15 @@ class CheckoutService
             'notes' => 'Order dibuat.',
         ]);
 
-        foreach ($items as $item) {
-            $variant = $variants->get($item['product_variant_id']);
+        foreach ($requestedItems as $item) {
+            $product = $products->get($item['product_id']);
 
-            if ($variant?->track_stock) {
-                $variant->decrement('stock', $item['quantity']);
+            if ($product?->track_stock) {
+                $product->decrement('stock', $item['quantity']);
             }
         }
 
         return $order->load(['items', 'statusHistories.user']);
-    }
-
-    private function resolveItems(Collection $items, Collection $variantsByProduct): Collection
-    {
-        return $items->map(function (array $item, int $index) use ($variantsByProduct): array {
-            $variants = $variantsByProduct
-                ->get($item['product_id'], collect())
-                ->filter(fn (ProductVariant $variant): bool => $variant->is_active)
-                ->sortByDesc('is_default')
-                ->values();
-
-            $variant = null;
-
-            if (filled($item['product_variant_id'])) {
-                $variant = $variants->firstWhere('id', $item['product_variant_id']);
-            }
-
-            if (! $variant && filled($item['variant_sku'] ?? null)) {
-                $variant = $variants->firstWhere('sku', $item['variant_sku']);
-            }
-
-            if (! $variant && $variants->count() === 1) {
-                $variant = $variants->first();
-            }
-
-            if (! $variant) {
-                $message = $variants->count() > 1
-                    ? "Pilih variant yang valid untuk produk ID {$item['product_id']}."
-                    : "Variant aktif untuk produk ID {$item['product_id']} tidak ditemukan.";
-
-                throw ValidationException::withMessages([
-                    "items.{$index}.product_variant_id" => $message,
-                ]);
-            }
-
-            return [
-                'product_id' => $item['product_id'],
-                'product_variant_id' => $variant->id,
-                'quantity' => $item['quantity'],
-            ];
-        });
     }
 
     private function nextOrderNumber(): string

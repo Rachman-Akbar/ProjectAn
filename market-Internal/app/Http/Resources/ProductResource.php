@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Models\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -10,17 +9,6 @@ class ProductResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $variants = $this->relationLoaded('variants')
-            ? $this->variants->values()
-            : collect();
-        $activeVariants = $variants
-            ->filter(fn (ProductVariant $variant): bool => (bool) $variant->is_active)
-            ->values();
-        $defaultVariant = $activeVariants->firstWhere('is_default', true)
-            ?? $activeVariants->first();
-        $prices = $activeVariants
-            ->pluck('price')
-            ->map(fn ($price): float => (float) $price);
         $images = $this->relationLoaded('images')
             ? $this->images->map(fn ($image): array => [
                 'id' => $image->id,
@@ -45,87 +33,23 @@ class ProductResource extends JsonResource
                 : [],
             'name' => $this->name,
             'slug' => $this->slug,
+            'sku' => $this->sku,
             'type' => $this->type,
             'description' => $this->description,
             'brand' => $this->brand,
-            'product_attributes' => $this->relationLoaded('attributeValues')
-                ? $this->attributeValues->map(fn ($value): array => [
-                    'id' => $value->id,
-                    'attribute_id' => $value->attribute_id,
-                    'name' => $value->relationLoaded('attribute') ? $value->attribute?->name : null,
-                    'slug' => $value->relationLoaded('attribute') ? $value->attribute?->slug : null,
-                    'type' => $value->relationLoaded('attribute') ? $value->attribute?->type : null,
-                    'value' => $value->value,
-                ])->values()->all()
-                : [],
             'images' => $images->all(),
             'image_urls' => $images->pluck('url')->filter()->values()->all(),
             'thumbnail' => $firstImage['url'] ?? $this->imageUrl($this->thumbnail),
-            'variants' => $variants
-                ->map(fn (ProductVariant $variant): array => $this->variantPayload($variant))
-                ->values()
-                ->all(),
-            'default_variant' => $defaultVariant
-                ? $this->variantPayload($defaultVariant)
-                : null,
-            'default_variant_id' => $defaultVariant?->id,
-            'has_multiple_variants' => $activeVariants->count() > 1,
-            'requires_variant_selection' => $activeVariants->count() > 1,
-            'price' => $defaultVariant ? (float) $defaultVariant->price : 0,
-            'price_min' => $prices->min() ?? 0,
-            'price_max' => $prices->max() ?? 0,
-            'available' => $activeVariants->contains(
-                fn (ProductVariant $variant): bool => $this->variantAvailable($variant)
-            ),
-            'rating' => (float) ($this->rating ?? 0),
-            'review_count' => (int) ($this->review_count ?? 0),
+            'price' => (float) $this->price,
+            'track_stock' => (bool) $this->track_stock,
+            'stock' => $this->stock !== null ? (int) $this->stock : null,
+            'available' => $this->isAvailable(),
             'status' => $this->status,
             'is_featured' => (bool) $this->is_featured,
             'is_active' => (bool) $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
-    }
-
-    private function variantPayload(ProductVariant $variant): array
-    {
-        $attributes = $variant->relationLoaded('values')
-            ? $variant->values->map(fn ($value): array => [
-                'id' => $value->id,
-                'attribute_id' => $value->attribute_id,
-                'name' => $value->relationLoaded('attribute') ? $value->attribute?->name : null,
-                'slug' => $value->relationLoaded('attribute') ? $value->attribute?->slug : null,
-                'value' => $value->value,
-            ])->values()->all()
-            : [];
-
-        return [
-            'id' => $variant->id,
-            'product_id' => $variant->product_id,
-            'sku' => $variant->sku,
-            'name' => $variant->name,
-            'price' => (float) $variant->price,
-            'attributes' => $attributes,
-            'values' => $attributes,
-            'track_stock' => (bool) $variant->track_stock,
-            'stock' => $variant->stock !== null ? (int) $variant->stock : null,
-            'is_default' => (bool) $variant->is_default,
-            'is_active' => (bool) $variant->is_active,
-            'available' => $this->variantAvailable($variant),
-        ];
-    }
-
-    private function variantAvailable(ProductVariant $variant): bool
-    {
-        if (! $variant->is_active) {
-            return false;
-        }
-
-        if (! $variant->track_stock) {
-            return true;
-        }
-
-        return (int) ($variant->stock ?? 0) > 0;
     }
 
     private function normalizeImagePath(?string $path): ?string

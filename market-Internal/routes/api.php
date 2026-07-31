@@ -32,7 +32,6 @@ Route::prefix('admin')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/dashboard', AdminDashboardController::class);
 
-        Route::get('/products/attribute-options', [ProductController::class, 'attributeOptions']);
         Route::apiResource('categories', CategoryController::class);
         Route::post('/categories/{category}', [CategoryController::class, 'update']);
         Route::apiResource('products', ProductController::class);

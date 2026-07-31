@@ -21,23 +21,6 @@ return new class extends Migration
             }
         }
 
-        if (Schema::hasTable('product_variants')) {
-            Schema::table('product_variants', function (Blueprint $table): void {
-                if (! Schema::hasColumn('product_variants', 'track_stock')) {
-                    $table->boolean('track_stock')->default(true);
-                }
-                if (! Schema::hasColumn('product_variants', 'stock')) {
-                    $table->unsignedInteger('stock')->nullable();
-                }
-                if (! Schema::hasColumn('product_variants', 'is_default')) {
-                    $table->boolean('is_default')->default(false);
-                }
-                if (! Schema::hasColumn('product_variants', 'is_active')) {
-                    $table->boolean('is_active')->default(true);
-                }
-            });
-        }
-
         if (Schema::hasTable('orders')) {
             Schema::table('orders', function (Blueprint $table): void {
                 if (! Schema::hasColumn('orders', 'guest_name')) {
@@ -81,20 +64,11 @@ return new class extends Migration
 
         if (Schema::hasTable('order_items')) {
             Schema::table('order_items', function (Blueprint $table): void {
-                if (! Schema::hasColumn('order_items', 'product_variant_id')) {
-                    $table->unsignedBigInteger('product_variant_id')->nullable();
-                }
                 if (! Schema::hasColumn('order_items', 'product_sku')) {
                     $table->string('product_sku', 100)->nullable();
                 }
                 if (! Schema::hasColumn('order_items', 'product_type')) {
                     $table->string('product_type', 30)->default('product');
-                }
-                if (! Schema::hasColumn('order_items', 'variant_name')) {
-                    $table->string('variant_name')->nullable();
-                }
-                if (! Schema::hasColumn('order_items', 'variant_attributes')) {
-                    $table->json('variant_attributes')->nullable();
                 }
             });
         }

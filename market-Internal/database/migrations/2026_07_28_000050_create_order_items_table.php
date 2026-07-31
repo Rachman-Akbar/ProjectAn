@@ -12,12 +12,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('product_variant_id')->nullable()->constrained()->nullOnDelete();
             $table->string('product_name');
             $table->string('product_sku', 100)->nullable();
             $table->string('product_type', 30)->default('product');
-            $table->string('variant_name')->nullable();
-            $table->json('variant_attributes')->nullable();
             $table->decimal('price', 15, 2);
             $table->unsignedInteger('quantity');
             $table->decimal('subtotal', 15, 2);

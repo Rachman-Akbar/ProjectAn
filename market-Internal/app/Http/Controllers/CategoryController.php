@@ -18,13 +18,6 @@ class CategoryController extends Controller
     {
         $categories = Category::query()
             ->where('is_active', true)
-            ->withCount([
-                'products as products_count' => function ($query): void {
-                    $query
-                        ->where('status', 'published')
-                        ->where('is_active', true);
-                },
-            ])
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
@@ -47,13 +40,6 @@ class CategoryController extends Controller
                     $query->orWhereKey((int) $identifier);
                 }
             })
-            ->withCount([
-                'products as products_count' => function ($query): void {
-                    $query
-                        ->where('status', 'published')
-                        ->where('is_active', true);
-                },
-            ])
             ->firstOrFail();
 
         return response()->json([
@@ -222,7 +208,6 @@ class CategoryController extends Controller
             'image' => $this->imageUrl($category->image),
             'is_active' => (bool) $category->is_active,
             'sort_order' => (int) $category->sort_order,
-            'products_count' => (int) ($category->products_count ?? 0),
             'created_at' => $category->created_at,
             'updated_at' => $category->updated_at,
         ];

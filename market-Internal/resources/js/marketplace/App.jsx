@@ -1,6 +1,6 @@
 import { Home, ArrowLeft } from "lucide-react";
 import { Link, Route, Routes } from "react-router-dom";
-import { CartPage, CheckoutPage, HomePage, OrderSuccessPage, ProductDetailPage, ProductsPage, PublicLayout, TrackOrderPage, } from "@/pages/PublicPages";
+import { CartPage, CheckoutPage, HomePage, OrderEditPage, OrderSuccessPage, ProductDetailPage, ProductsPage, PublicLayout, TrackOrderPage, } from "@/pages/PublicPages";
 import { AdminCategoriesPage, AdminDashboardPage, AdminLayout, AdminLoginPage, AdminOnlyRoute, AdminOrdersPage, AdminProductsPage, AdminUsersPage, ProtectedRoute, } from "@/pages/AdminPages";
 function NotFound() {
     return (<main className="flex min-h-screen items-center justify-center bg-slate-100 px-5">
@@ -21,6 +21,7 @@ export function App() {
         <Route path="product/:slug" element={<ProductDetailPage />}/>
         <Route path="cart" element={<CartPage />}/>
         <Route path="checkout" element={<CheckoutPage />}/>
+        <Route path="orders/:orderNumber/edit" element={<OrderEditPage />}/>
         <Route path="order-success/:orderNumber" element={<OrderSuccessPage />}/>
         <Route path="track-order" element={<TrackOrderPage />}/>
         <Route path="orders/track" element={<TrackOrderPage />}/>

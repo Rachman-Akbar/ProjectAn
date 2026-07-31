@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Order;
-use App\Models\ProductVariant;
+use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -187,41 +187,41 @@ class OrderService
     private function restoreStock(Order $order): void
     {
         foreach ($order->items as $item) {
-            $variant = ProductVariant::query()->lockForUpdate()->find($item->product_variant_id);
+            $product = Product::query()->lockForUpdate()->find($item->product_id);
 
-            if ($variant?->track_stock) {
-                $variant->increment('stock', $item->quantity);
+            if ($product?->track_stock) {
+                $product->increment('stock', $item->quantity);
             }
         }
     }
 
     private function reserveStock(Order $order): void
     {
-        $variants = [];
+        $products = [];
 
         foreach ($order->items as $item) {
-            $variant = ProductVariant::query()->lockForUpdate()->find($item->product_variant_id);
+            $product = Product::query()->lockForUpdate()->find($item->product_id);
 
-            if (! $variant || ! $variant->is_active) {
+            if (! $product || ! $product->is_active || $product->status !== 'published') {
                 throw ValidationException::withMessages([
-                    'status' => "Variant {$item->variant_name} sudah tidak tersedia.",
+                    'status' => "Produk {$item->product_name} sudah tidak tersedia.",
                 ]);
             }
 
-            if ($variant->track_stock && (int) ($variant->stock ?? 0) < $item->quantity) {
+            if ($product->track_stock && (int) ($product->stock ?? 0) < $item->quantity) {
                 throw ValidationException::withMessages([
-                    'status' => "Stok {$item->product_name} - {$item->variant_name} tidak mencukupi untuk membuka kembali order.",
+                    'status' => "Stok {$item->product_name} tidak mencukupi untuk membuka kembali order.",
                 ]);
             }
 
-            $variants[$item->id] = $variant;
+            $products[$item->id] = $product;
         }
 
         foreach ($order->items as $item) {
-            $variant = $variants[$item->id];
+            $product = $products[$item->id];
 
-            if ($variant->track_stock) {
-                $variant->decrement('stock', $item->quantity);
+            if ($product->track_stock) {
+                $product->decrement('stock', $item->quantity);
             }
         }
     }
